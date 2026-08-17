@@ -205,12 +205,13 @@ function buildFromLengths(lengths, opts={}) {
 function loadExample(num) {
   if(num === 1) {
     // 例1: 多跨静定梁 13m: A(0)-4m-B(4)-1m-C(5)-3m-D(8)-1m-E(9)-4m-F(13)
-    // 基本部分: AB段(A固定铰+B可动铰)、DEF段(D可动铰+F可动铰)
-    // 附属部分: CD段(C铰+D铰)，通过C铰依附于AB，D铰处有支座
+    // 基本部分: AB段(A固定铰+B可动铰)、DEF段(E可动铰+F可动铰)
+    // 附属部分: CD段(C铰+D铰)，通过C铰依附于AB基本部分，通过D铰依附于DEF基本部分
     buildFromLengths([4, 1, 3, 1, 4]);
     SUPPORT_TYPES['A'] = 'pinned';
     SUPPORT_TYPES['B'] = 'roller';
-    SUPPORT_TYPES['D'] = 'roller';
+    SUPPORT_TYPES['D'] = 'none';   // D处无支座（仅为铰节点）
+    SUPPORT_TYPES['E'] = 'roller'; // E处设置可动铰支座
     SUPPORT_TYPES['F'] = 'roller';
     hingeNodes['C'] = true;
     hingeNodes['D'] = true;
@@ -481,7 +482,7 @@ function collectLayerForces(layer, hingeTransfer) {
       }
     });
   });
-  // 2. 已知铰传递力（来自已求解的附属层）
+  // 2. 已知铰传递力（来自已求解的附属层，反向加到基本结构/上层附属结构上）
   layer.nodes.forEach(n => {
     if(hingeNodes[n] && hingeTransfer[n] !== undefined) {
       ext.push({Fx:0, Fy: hingeTransfer[n], M:0, gx: NODES[n].x, src:'hinge-transfer'});
@@ -597,142 +598,402 @@ function solveLayerEquilibrium(layer, reactions, hingeTransfer) {
 }
 
 // 静定多跨梁分层求解
+// 步骤：① 识别基本/附属结构 → ② 先算附属：得铰处反力 → ③ 把铰反力反向加到基本结构 → ④ 算基本结构支座反力
 function solveStaticallyDeterminate() {
   const layers = identifyLayers();
   const reactions = {};
   NODE_IDS.forEach(id => { reactions[id] = {fx:0, fy:0, m:0}; });
-  const hingeTransfer = {}; // {nodeId: Fy} 铰传递力
-  const solveSteps = []; // 求解过程记录
+  const hingeTransfer = {}; // {nodeId: Fy} 铰传递力（附属层铰处受力，反向作用到基本层）
+  const solveSteps = []; // 求解过程记录（带文字说明）
 
-  // 求解顺序：先附属，后基本
   const subordinate = layers.filter(l => !l.isBasic);
   const basic = layers.filter(l => l.isBasic);
   const order = [...subordinate, ...basic];
 
-  order.forEach(layer => {
+  // ===== 第1阶段：求解所有附属结构 =====
+  subordinate.forEach(layer => {
+    const stepHeader = `【附属结构 ${layer.id}】${layer.startNode}→${layer.endNode}`;
+    // (a) 列出该附属结构受到的直接荷载
     const result = solveLayerEquilibrium(layer, reactions, hingeTransfer);
-    // 记录求解步骤
-    const stepInfo = {
+    // (b) 找出求出的"铰支座反力"（附属层端点铰的支承力）
+    const hingeReactions_out = {};
+    result.unk.forEach((u, i) => {
+      if(u.isHinge) {
+        // u.value = 附属层在该铰"受到的向上支承力"（由基本层/相邻层提供）
+        // 因此作用到基本层/相邻层上的作用力 Fy = -u.value（方向相反）
+        hingeTransfer[u.node] = -result.values[i];
+        hingeReactions_out[u.node] = {
+          onSubordinate: result.values[i],   // 附属梁在此铰受到的力(向上为正)
+          onAdjacent:    -result.values[i]   // 加到相邻基本结构上的荷载(反向)
+        };
+      }
+    });
+    solveSteps.push({
+      phase: '第1阶段(附属)',
       layerId: layer.id,
       type: layer.type,
       range: `${layer.startNode}-${layer.endNode}`,
       loads: result.ext.filter(e => e.src !== 'hinge-transfer'),
-      hingeForces: result.ext.filter(e => e.src === 'hinge-transfer'),
+      hingeForces_in: result.ext.filter(e => e.src === 'hinge-transfer'),
+      hingeReactions_out,
       unknowns: result.unk.map((u,i) => ({
         node: u.node, comp: u.comp, isHinge: u.isHinge||false,
         value: result.values[i]
       })),
-      reactions: {}
-    };
-    layer.nodes.forEach(n => {
-      if(SUPPORT_TYPES[n] && SUPPORT_TYPES[n] !== 'none') {
-        stepInfo.reactions[n] = {...reactions[n]};
-      }
+      reactions_now: {...reactions},
+      desc: `${stepHeader}：求出各铰处支承力，下一步将其反向作为荷载加到基本结构上`
     });
-    solveSteps.push(stepInfo);
   });
 
-  const memberForces = computeInternalForcesBySection(reactions);
+  // ===== 第2阶段：记录"将附属铰反力作为荷载加到基本结构" =====
+  if(subordinate.length > 0 && Object.keys(hingeTransfer).length > 0) {
+    const transList = [];
+    for(const nodeId in hingeTransfer) {
+      const F = hingeTransfer[nodeId];
+      if(Math.abs(F) > 1e-9) {
+        transList.push({node: nodeId, Fy: F, gx: NODES[nodeId].x});
+      }
+    }
+    if(transList.length > 0) {
+      solveSteps.push({
+        phase: '过渡步骤',
+        layerId: '--',
+        type: '铰反力传递',
+        range: '—',
+        loads: [],
+        hingeForces_in: [],
+        hingeReactions_out: {},
+        unknowns: [],
+        reactions_now: {...reactions},
+        transferList: transList,
+        desc: `将附属结构铰反力反向作为荷载加到基本结构上：` +
+              transList.map(t => `${t.node}点加Fy=${t.Fy.toFixed(2)}`).join('、')
+      });
+    }
+  }
+
+  // ===== 第3阶段：求解基本结构（现在已经带上了附属传过来的铰反力荷载） =====
+  basic.forEach(layer => {
+    const stepHeader = `【基本结构 ${layer.id}】${layer.startNode}→${layer.endNode}`;
+    const result = solveLayerEquilibrium(layer, reactions, hingeTransfer);
+    solveSteps.push({
+      phase: '第2阶段(基本)',
+      layerId: layer.id,
+      type: layer.type,
+      range: `${layer.startNode}-${layer.endNode}`,
+      loads: result.ext.filter(e => e.src !== 'hinge-transfer'),
+      hingeForces_in: result.ext.filter(e => e.src === 'hinge-transfer'), // 含附属传过来的
+      hingeReactions_out: {},
+      unknowns: result.unk.map((u,i) => ({
+        node: u.node, comp: u.comp, isHinge: u.isHinge||false,
+        value: result.values[i]
+      })),
+      reactions_now: {...reactions},
+      desc: `${stepHeader}：承受原荷载 + 附属传来铰反力，求解得全部支座反力`
+    });
+  });
+
+  // ===== 第4阶段：找出所有控制截面 + 用叠加法求内力 =====
+  const ctrlSections = findControlSections();  // 控制截面（全局x坐标+类型）
+  const memberForces = computeInternalForcesBySuperposition(reactions, ctrlSections);
+
   return {
     U: Array(DOF_TOTAL).fill(0), F_eq: null,
     reactions, memberForces,
-    method: 'section',
-    layers, solveSteps, order
+    method: 'superposition',
+    layers, solveSteps, order,
+    ctrlSections, hingeTransfer
   };
 }
 
-// 截面法：用全局坐标（最左端A→当前截面）计算隔离体平衡，得到N/V/M
-// 这样多段梁、中间支座、多跨之间的阶跃完全自动连续。
-function computeInternalForcesBySection(reactions) {
-  const results = {};
-  // 预计算所有"全局外力"：荷载 + 支座反力 + 支座反力偶
-  // 每项: {Fx,Fy,M(ccw+), gx, gxStrict_less_than_for_jump?}
-  // 对于集中类外力，阶跃发生在右侧 (x_force < x_sec 严格小于时计入v/n/m阶跃)
-  // 对于均布荷载积分时已自动处理
-  const globalForces = [];
+// 找出全部控制截面：
+//   - 所有节点/端点（包括内部铰位置、支座位置）
+//   - 集中力作用点（左右两侧分开，剪力跳跃，但弯矩连续→故取单一x，用左侧截面规则单独处理）
+//   - 集中力偶作用点（左右两侧分开，弯矩跳跃→必须拆成xLeft/xRight）
+//   - 分布荷载(UDL)的起点、终点
+// 返回：按 gx 升序排列的 [{gx, kind, label, member?, side?}] 数组
+function findControlSections() {
+  const list = [];
+  const push = (gx, kind, label, extra={}) => {
+    if(!isFinite(gx)) return;
+    list.push({gx: +gx.toFixed(6), kind, label, ...extra});
+  };
+
+  // (1) 所有节点（天然的控制截面）
   NODE_IDS.forEach(id => {
-    const r = reactions[id];
-    const gx = NODES[id].x;
-    // 支座反力: 只要有值就添加
-    if(r.fx || r.fy) globalForces.push({kind:'concentrated-force', Fx:r.fx, Fy:r.fy, gx, label:'R_'+id});
-    if(r.m) globalForces.push({kind:'moment', M:r.m, gx, label:'M_'+id});
+    const n = NODES[id];
+    const tags = [];
+    if(SUPPORT_TYPES[id] && SUPPORT_TYPES[id] !== 'none') tags.push(SUPPORT_TYPES[id]);
+    if(hingeNodes[id]) tags.push('hinge');
+    push(n.x, 'node', id + (tags.length?`(${tags.join('/')})`:''), {nodeId: id, isSupport: SUPPORT_TYPES[id]&&SUPPORT_TYPES[id]!=='none', isHinge: !!hingeNodes[id]});
   });
+
+  // (2) 集中力、集中力偶、UDL起止点
   loads.forEach(ld => {
-    const mem = MEMBERS.find(m=>m.id===ld.member); if(!mem) return;
+    const mem = MEMBERS.find(m => m.id === ld.member);
+    if(!mem) return;
     const gxA = NODES[mem.nodeA].x;
-    if(ld.type==='udl'){
-      const w = ld.value, gx1 = gxA + ld.pos1, gx2 = gxA + ld.pos2;
-      if(gx2>gx1) globalForces.push({kind:'udl', w, gx1, gx2, label:ld.member+' udl'});
-    } else if(ld.type==='point'){
-      const {Fx,Fy} = getGlobalForce(ld);
-      globalForces.push({kind:'concentrated-force', Fx, Fy, gx: gxA + ld.pos, label:ld.member+' P'});
-    } else if(ld.type==='moment'){
-      const m = ld.value * getMomentSign(ld);
-      globalForces.push({kind:'moment', M:m, gx: gxA + ld.pos, label:ld.member+' M'});
+    if(ld.type === 'point') {
+      const gx = gxA + ld.pos;
+      // 集中力：剪力有竖直突变（突变值=集中力大小），弯矩连续但斜率突变
+      //   拆分为"左截面(gx-ε)、右截面(gx+ε)"两个控制截面（与力偶处理方式一致）
+      //   对剪力图：画竖线突变；对弯矩图：ε极小，两M值几乎相等，不影响折线形状
+      const LBL = `P=${ld.value}@${mem.id}${ld.pos}m`;
+      push(gx - 1e-6, 'point-left',  LBL + ' 左', {memberId: mem.id, loadId: ld.id, forceGx: gx, side:'L'});
+      push(gx + 1e-6, 'point-right', LBL + ' 右', {memberId: mem.id, loadId: ld.id, forceGx: gx, side:'R'});
+    } else if(ld.type === 'moment') {
+      const gx = gxA + ld.pos;
+      // 集中力偶：弯矩有跳跃、剪力无跳跃。必须拆分为"左截面(gx-ε)、右截面(gx+ε)"两个控制截面
+      const LBL = `M=${ld.value}@${mem.id}${ld.pos}m(CCW+)`;
+      push(gx - 1e-6, 'moment-left',  LBL + ' 左', {memberId: mem.id, loadId: ld.id, coupleGx: gx, side:'L'});
+      push(gx + 1e-6, 'moment-right', LBL + ' 右', {memberId: mem.id, loadId: ld.id, coupleGx: gx, side:'R'});
+    } else if(ld.type === 'udl') {
+      const gx1 = gxA + ld.pos1, gx2 = gxA + ld.pos2;
+      if(gx2 - gx1 < 1e-9) return;
+      push(gx1, 'udl-start', `UDL w=${ld.value} 起点@${mem.id}${ld.pos1}m`, {memberId: mem.id, loadId: ld.id, w: ld.value, gx2: gx2});
+      push(gx2, 'udl-end',   `UDL w=${ld.value} 终点@${mem.id}${ld.pos2}m`, {memberId: mem.id, loadId: ld.id, w: ld.value, gx1: gx1});
+      // ★ UDL 跨中作为控制截面（叠加法跨中弯矩 = 基线中点 + q·l²/8）
+      const gxMid = (gx1 + gx2) / 2;
+      push(gxMid, 'udl-mid', `UDL w=${ld.value} 跨中@${mem.id}`, {memberId: mem.id, loadId: ld.id, w: ld.value, gx1: gx1, gx2: gx2});
     }
   });
 
+  // 按 gx 升序排序；同一位置的顺序：node → moment-left → point-left → udl-start/end → udl-mid → point-right → moment-right
+  const kindOrder = {'node':0, 'moment-left':1, 'point-left':2, 'udl-start':3, 'udl-end':4, 'udl-mid':5, 'point-right':6, 'moment-right':7};
+  list.sort((a,b) => {
+    if(Math.abs(a.gx-b.gx) > 1e-12) return a.gx - b.gx;
+    return (kindOrder[a.kind]||0) - (kindOrder[b.kind]||0);
+  });
+  return list;
+}
+
+// 截面法求某截面 x=gxSec 的 N/V/M
+//   sideRule: 'left'  — 仅计入 gx < gxSec 的集中外力（gx==gxSec 不计），等同于隔离体取"截面左侧"
+//             'right' — 仅计入 gx > gxSec 的集中外力（等价于取右侧平衡）
+//             'incl0' — 若截面处于杆件首截面(a<1e-9)，则将 gx==gxSec 处外力也计入（用于构件起点）
+//   N/V/M 符号约定：V使微元顺时针为正，N受拉为正，M下侧受拉为正
+function sectionMethodAt(reactions, gxSec, sideRule='left') {
+  let sumFx = 0, sumFy = 0, sumM_ccw = 0;
+  // —— 支座反力 ——
+  NODE_IDS.forEach(id => {
+    const r = reactions[id]; const gx = NODES[id].x;
+    let include;
+    if(sideRule === 'incl0' && Math.abs(gx - gxSec) < 1e-9) include = true;
+    else if(sideRule === 'right') include = (gx > gxSec + 1e-12);
+    else include = (gx < gxSec - 1e-12); // 'left' 默认
+    if(!include) return;
+    sumFx += r.fx; sumFy += r.fy;
+    sumM_ccw += r.fy * (gxSec - gx);
+    // 支座反力偶(ccw+)：左侧CCW反力偶在截面产生上侧受拉 → 负弯矩贡献
+    sumM_ccw -= r.m;
+  });
+  // —— 荷载 ——
+  loads.forEach(ld => {
+    const mem = MEMBERS.find(m => m.id === ld.member); if(!mem) return;
+    const gxA = NODES[mem.nodeA].x;
+    if(ld.type === 'point') {
+      const {Fx,Fy} = getGlobalForce(ld);
+      const gx = gxA + ld.pos;
+      let include;
+      if(sideRule === 'incl0' && Math.abs(gx - gxSec) < 1e-9) include = true;
+      else if(sideRule === 'right') include = (gx > gxSec + 1e-12);
+      else include = (gx < gxSec - 1e-12);
+      if(!include) return;
+      sumFx += Fx; sumFy += Fy;
+      sumM_ccw += Fy * (gxSec - gx);
+    } else if(ld.type === 'moment') {
+      const mccw = ld.value * getMomentSign(ld); // CCW+
+      const gx = gxA + ld.pos;
+      let include;
+      if(sideRule === 'incl0' && Math.abs(gx - gxSec) < 1e-9) include = true;
+      else if(sideRule === 'right') include = (gx > gxSec + 1e-12);
+      else include = (gx < gxSec - 1e-12);
+      if(!include) return;
+      // 外力偶CCW+使左侧隔离体上侧受拉 → 负弯矩贡献
+      sumM_ccw -= mccw;
+    } else if(ld.type === 'udl') {
+      const w = ld.value;
+      const gx1 = gxA + ld.pos1, gx2 = gxA + ld.pos2;
+      if(gx2 - gx1 < 1e-9) return;
+      let gxLeftEnd, gxRightEnd;
+      if(sideRule === 'right') {
+        if(gx1 >= gxSec - 1e-12) return;
+        gxLeftEnd  = gx1;
+        gxRightEnd = Math.min(gx2, gxSec);
+      } else {
+        if(gx1 >= gxSec) return;
+        gxLeftEnd = gx1;
+        gxRightEnd = Math.min(gx2, gxSec);
+        if(sideRule === 'incl0' && Math.abs(gx2 - gxSec) < 1e-9) gxRightEnd = gx2;
+      }
+      if(gxRightEnd - gxLeftEnd <= 1e-12) return;
+      const lenEff = gxRightEnd - gxLeftEnd;
+      const Fy = -w * lenEff; // 向下为负
+      const gxFbar = gxLeftEnd + lenEff/2;
+      sumFy += Fy;
+      sumM_ccw += Fy * (gxSec - gxFbar);
+    }
+  });
+  // 局部坐标投影（水平梁 angle≈0，保留公式保证通用性）
+  const angle = 0; const c = Math.cos(angle), s = Math.sin(angle);
+  const N_proj = c*sumFx + s*sumFy;
+  const V_proj = s*sumFx - c*sumFy;
+  const N = -N_proj; const V = -V_proj;
+  return {N, V, M: sumM_ccw, sumFx, sumFy};
+}
+
+// 用"控制截面 + 叠加法"计算每段梁的内力（M/V/N）
+// 步骤：
+// ① 对每个控制截面，用截面法算出 M_ctrl / V_ctrl / N_ctrl
+// ② 对每个梁段（member），按其全局x区间找到对应的控制截面集合；
+//    相邻两个控制截面之间：用线性叠加（两端点M + 若区间内有UDL则叠加上w·x·(L-x)/2抛物线项）
+//    V在相邻控制截面之间：无UDL为常数，有UDL为线性；N与V类似但对x方向荷载敏感
+function computeInternalForcesBySuperposition(reactions, ctrlSections) {
+  const results = {};
+
+  // (1) 对每个控制截面先计算左侧截面 M/V/N（严格左截面规则，排除刚好作用在gx处的集中外力）
+  //     对于 moment-right 控制截面，还需用 gxSec = coupleGx 做一次截面法
+  const ctrlVals = ctrlSections.map(s => ({
+    sec: s,
+    ...sectionMethodAt(reactions, s.gx, 'left')
+  }));
+
+  // (2) 逐梁段生成离散点数据
   MEMBERS.forEach(mem => {
     const L = mem.L, angle = mem.angle;
-    const c = Math.cos(angle), s = Math.sin(angle);
-    const gxA_mem = NODES[mem.nodeA].x; // 该梁段A端的全局x
-    const pts = 160;
-    const xs = [], Ms = [], Vs = [], Ns = [];
-    for(let i=0;i<=pts;i++){
-      const a = (i/pts) * L;        // 沿杆距A端的距离
-      const gxSec = gxA_mem + a;    // 截面全局x
-      xs.push(a);
+    const gxA_mem = NODES[mem.nodeA].x;
+    const gxB_mem = NODES[mem.nodeB].x;
 
-      // 阶跃规则：集中力/力偶默认仅当 gx < gxSec 时计入（阶跃发生在作用点右侧）
-      // 唯一例外：杆件首截面（a==0）时，端点（gx==gxSec）处的集中力/力偶也计入（即为该杆件左端外力）
-      const isEnd0 = a < 1e-9;
-      let sumFx = 0, sumFy = 0, sumM_ccw = 0;
-      globalForces.forEach(f => {
-        if(f.kind==='concentrated-force') {
-          const sameSpot = Math.abs(f.gx - gxSec) < 1e-9;
-          if(sameSpot) { if(!isEnd0) return; }
-          else if(f.gx > gxSec) return;
-          sumFx += f.Fx;
-          sumFy += f.Fy;
-          sumM_ccw += f.Fy * (gxSec - f.gx);
-        } else if(f.kind==='moment') {
-          const sameSpot = Math.abs(f.gx - gxSec) < 1e-9;
-          if(sameSpot) { if(!isEnd0) return; }
-          else if(f.gx > gxSec) return;
-          // 集中力偶(CCW+)使左侧产生逆时针转趋势→上侧受拉(负弯矩)，故取负号
-          sumM_ccw -= f.M;
-        } else if(f.kind==='udl') {
-          if(gxSec <= f.gx1) return;
-          const gxEffEnd = Math.min(gxSec, f.gx2);
-          const lenEff = gxEffEnd - f.gx1;
-          if(lenEff <= 0) return;
-          const Fy = -f.w * lenEff; // 向下，所以负
-          const gxForce = f.gx1 + lenEff/2;
-          sumFy += Fy;
-          sumM_ccw += Fy * (gxSec - gxForce);
+    // (2a) 收集本梁段范围内的控制截面 gx
+    const secsIn = [];
+    // ① 梁段首端（强制在 a=0 处）
+    secsIn.push({gx: gxA_mem, label: mem.nodeA + '端', forcedLeft: true});
+    // ② 控制截面落在 [gxA_mem, gxB_mem] 内的
+    ctrlSections.forEach(s => {
+      if(s.gx < gxA_mem - 1e-9 || s.gx > gxB_mem + 1e-9) return;
+      if(Math.abs(s.gx - gxA_mem) < 1e-9 || Math.abs(s.gx - gxB_mem) < 1e-9) return; // 端点另外处理
+      secsIn.push({gx: s.gx, label: s.label, kind: s.kind, secRef: s});
+    });
+    // ③ 梁段尾端（强制在 a=L 处）
+    secsIn.push({gx: gxB_mem, label: mem.nodeB + '端', forcedRight: true});
+    secsIn.sort((a,b) => a.gx - b.gx);
+
+    // (2b) 按相邻控制截面逐段生成密集点
+    const xs = [], Ms = [], Vs = [], Ns = [];
+    const ctrlIdx = []; // ★ 控制截面在 Ms/Vs/Ns 中的索引（仅这些点输出标签）
+    const SUBDIV = 40; // 每两个控制截面之间细分40段
+
+    for(let si=0; si<secsIn.length-1; si++) {
+      const A = secsIn[si], B = secsIn[si+1];
+      const gxA = A.gx, gxB = B.gx;
+      const dGx = gxB - gxA;
+      if(dGx <= 1e-12) continue; // 同一位置跳过（力偶左右可能紧挨）
+
+      // ★ 突变对检测：dGx 极小（如 x-1e-6 → x+1e-6），跳过 SUBDIV 插值
+      //   只发两个端点，绘图时画竖线表现突变
+      //   适用于：集中力偶（moment-left/right → M突变）、集中力（point-left/right → V突变）
+      //   判定条件：相邻控制截面 dGx < 1e-4 且至少有一个标记为 *-left/*-right（point 或 moment）
+      const jumpKinds = ['moment-left','moment-right','point-left','point-right'];
+      const isJumpPair = dGx < 1e-4 && (
+        (A.secRef && jumpKinds.includes(A.secRef.kind)) ||
+        (B.secRef && jumpKinds.includes(B.secRef.kind))
+      );
+      if(isJumpPair) {
+        // 左截面（gx = x - ε，严格左侧规则，集中力/力偶未越过 → 不计入）
+        const end_L_jump = sectionMethodAt(reactions, gxA, 'left');
+        const aLeft = gxA - gxA_mem;
+        // ★ 避免重复添加 left 端点（前一个 si 的 k=SUBDIV 可能已添加）
+        if(xs.length === 0 || Math.abs(xs[xs.length-1] - aLeft) > 1e-9) {
+          xs.push(aLeft);
+          Ms.push(end_L_jump.M);
+          Vs.push(end_L_jump.V);
+          Ns.push(end_L_jump.N);
+          ctrlIdx.push(xs.length - 1); // ★ 控制截面
         }
-      });
-      // 局部N/V 投影
-      const N_proj = c*sumFx + s*sumFy;
-      const V_proj = s*sumFx - c*sumFy;
-      const N = -N_proj;
-      const V = -V_proj;
-      // 弯矩：sumM_ccw = 所有外力对截面形心的 ccw+ 力矩之和。
-      // 简支UDL跨中验证：R_A=30↑Fy*(3-0) = 90 ccw+? 实际画图：左端向上的力会让梁"左端向上、右端不动"，变形为下凸（下侧受拉=正弯矩）。
-      //   叉乘方向：Fy↑×位置向量向右 = 方向指向纸内(CW)，对应顺时针弯矩 → 正弯矩下侧受拉。
-      //   所以"外力使梁产生下侧受拉的弯矩"对应 sumM_ccw 中的正号项实际为顺时针弯矩。
-      // 其实真正的正弯矩（下侧受拉） = Σ外力顺时针力矩 = -Σ外力CCW力矩？
-      // 验证UDL简支x=3：R_Ay*(gxSec-gx) = 30*3 = 90，加上UDL前3m合力Fy=-30作用于gx=1.5 → Fy*(3-1.5) = -45。
-      //   sumM_ccw = 45。而正弯矩应为 +45 → 所以 M = +sumM_ccw ✓（正好匹配直觉，ccw公式的叉乘结果就是正弯矩方向）
-      const M = sumM_ccw;
-      Ns.push(N); Vs.push(V); Ms.push(M);
+        // 右截面（gx = x + ε，严格左侧规则，集中力/力偶已越过 → 计入隔离体）
+        const end_R_jump = sectionMethodAt(reactions, gxB, 'left');
+        xs.push(gxB - gxA_mem);
+        Ms.push(end_R_jump.M);
+        Vs.push(end_R_jump.V);
+        Ns.push(end_R_jump.N);
+        ctrlIdx.push(xs.length - 1); // ★ 控制截面
+        continue; // 不再细分插值，由 drawDiagram 画竖线
+      }
+
+      // 取两端控制截面的 M/V/N（严格用左侧规则，确保边界连续）
+      const end_L = sectionMethodAt(reactions, gxA,
+        A.forcedLeft ? 'incl0' : 'left');
+      const end_R = sectionMethodAt(reactions, gxB, 'left');
+
+      // 判断该小区间内是否有覆盖其 全程 的UDL（w值）
+      // 注：叠加法中 w·x·(L-x)/2 抛物线仅当 w 在整个 A→B 段为常数时才成立
+      let wInterval = 0;
+      {
+        const loadsCovering = loads.filter(ld => {
+          if(ld.type !== 'udl' || ld.member !== mem.id) return false;
+          const gx1 = gxA_mem + ld.pos1, gx2 = gxA_mem + ld.pos2;
+          // 要求 [gxA, gxB] ⊂ [gx1, gx2] （公差内）
+          return gx1 <= gxA + 1e-9 && gx2 >= gxB - 1e-9;
+        });
+        if(loadsCovering.length === 1) {
+          wInterval = loadsCovering[0].value;
+        } else if(loadsCovering.length > 1) {
+          // 多个UDL同时覆盖：取代数和
+          wInterval = loadsCovering.reduce((s, ld) => s + ld.value, 0);
+        }
+      }
+
+      // 细分 SUBDIV 份（包括端点）
+      for(let k=0; k<=SUBDIV; k++) {
+        if(si > 0 && k === 0) continue; // 避免相邻小区间在边界重复
+        const t = k / SUBDIV;
+        const gx  = gxA + t * dGx;
+        const a   = gx  - gxA_mem;
+        xs.push(a);
+        // 1) 线性项（两点弯矩的直线连接）
+        const M_linear = end_L.M + (end_R.M - end_L.M) * t;
+        // 2) 抛物线叠加项：UDL w 作用在简支梁A→B段上时的附加弯矩 w·(Lseg·t)·(Lseg·(1-t)) / 2
+        //    注意：w 正为"向下"，叠加产生下侧受拉 → M 正贡献。公式 w·L²·t·(1-t)/2 正确。
+        let M_parabola = 0;
+        if(Math.abs(wInterval) > 1e-9) {
+          const Lseg = dGx;
+          M_parabola = wInterval * Lseg * Lseg * t * (1 - t) / 2;
+        }
+        const M = M_linear + M_parabola;
+        Ms.push(M);
+
+        // 剪力：end_L.V + (end_R.V - end_L.V)*t （若中间有集中力则正好V_ctrl_R - V_ctrl_L反映了跳跃；
+        //       此处A/B是两相邻控制截面，之间无集中外力，故V要么常数(无UDL)，要么线性(有UDL)）
+        const V_linear = end_L.V + (end_R.V - end_L.V) * t;
+        // —— 叠加法下这个正好就是准确的V，无需额外修正
+        Vs.push(V_linear);
+
+        // 轴力：同理用线性插值（我们问题中无水平荷载+水平结构，N一般为0）
+        const N_linear = end_L.N + (end_R.N - end_L.N) * t;
+        Ns.push(N_linear);
+
+        // ★ 控制截面：k=0 是 A 端点，k=SUBDIV 是 B 端点
+        if(k === 0 || k === SUBDIV) {
+          ctrlIdx.push(xs.length - 1);
+        }
+      }
     }
+
     const last = Ms.length - 1;
-    results[mem.id]={M:Ms,V:Vs,N:Ns,x:xs,L,angle,
-      start:{N:Ns[0],V:Vs[0],M:Ms[0]},
-      end:  {N:Ns[last],V:Vs[last],M:Ms[last]}};
+    results[mem.id] = {
+      M: Ms, V: Vs, N: Ns, x: xs, L, angle,
+      ctrlSections: secsIn.map(s => ({gx: s.gx, label: s.label})),
+      ctrlIdx, // ★ 控制截面索引数组（仅这些索引输出标签）
+      start: {N: Ns[0],    V: Vs[0],    M: Ms[0]},
+      end:   {N: Ns[last], V: Vs[last], M: Ms[last]}
+    };
   });
   return results;
+}
+
+// 兼容旧接口：截面法（现在内部改为用叠加法实现，仅名称兼容）
+function computeInternalForcesBySection(reactions) {
+  return computeInternalForcesBySuperposition(reactions, findControlSections());
 }
 
 // ==================== 主求解函数 ====================
@@ -752,7 +1013,7 @@ function solveAndRender() {
     updateCheckResults();
     updateMemberResults();
     render();
-    updateStatus(`求解完成（静定多跨梁·分层求解+截面法）· M/V/N图已绘制`);
+    updateStatus(`求解完成：附属/基本结构拆分 → 先附属后基本反力 → 控制截面弯矩+叠加法绘图`);
   } catch(e) {
     console.error(e);
     updateStatus('求解失败: ' + e.message, true);
@@ -779,46 +1040,96 @@ function updateCheckResults(){
     html += `<div class="result-block" style="border-color:#a371f766;">`;
     html += `<div class="rb-title">附属/基本结构拆分与求解过程</div>`;
     html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.8;">`;
-    html += `<span style="color:#8b949e;">结构拆分（按铰节点分段）：</span><br>`;
+    html += `<span style="color:#8b949e;">① 结构拆分（按铰节点分段，竖向支座≥2为基本结构）：</span><br>`;
     solution.layers.forEach(l => {
       const color = l.isBasic ? '#3fb950' : '#f0883e';
       const supports = l.vertSupports.length;
       html += `　${l.id} [${l.startNode}→${l.endNode}] `
             + `<span style="color:${color};font-weight:600;">${l.type}</span>`
-            + ` (${supports}个竖向支座)<br>`;
+            + ` (竖向支座×${supports})<br>`;
     });
-    html += `<br><span style="color:#8b949e;">求解顺序（先附属后基本）：</span><br>`;
+    html += `<br><span style="color:#8b949e;">② 求解流程（先附属→铰反力反向加基本→再算基本）：</span><br>`;
     solution.solveSteps.forEach((step, si) => {
-      const color = step.type === '基本结构' ? '#3fb950' : '#f0883e';
-      html += `<br><span style="color:${color};font-weight:600;">第${si+1}步: ${step.type} ${step.range}</span><br>`;
+      html += `<br>`;
+      // 阶段颜色
+      let phaseColor = '#8b949e';
+      if(step.phase && step.phase.includes('附属')) phaseColor='#f0883e';
+      else if(step.phase && step.phase.includes('基本')) phaseColor='#3fb950';
+      else if(step.type === '铰反力传递') phaseColor='#d2a8ff';
+      html += `<span style="color:${phaseColor};font-weight:600;">▶ ${si+1}. ${step.desc || (step.phase||'') + ' ' + (step.range||'')}</span><br>`;
       // 外荷载
-      if(step.loads.length > 0) {
-        html += `　外荷载: `;
-        step.loads.forEach(f => {
+      const stepLoads = step.loads || [];
+      if(stepLoads.length > 0) {
+        html += `　· 承受的外荷载: `;
+        stepLoads.forEach(f => {
           if(Math.abs(f.Fy) > 0.01) html += `Fy=${f.Fy.toFixed(2)}@x=${f.gx.toFixed(1)} `;
           if(Math.abs(f.M) > 0.01) html += `M=${f.M.toFixed(2)}@x=${f.gx.toFixed(1)} `;
         });
         html += '<br>';
       }
-      // 铰传递力（已知外力）
-      if(step.hingeForces.length > 0) {
-        html += `　铰传递力(已知): `;
-        step.hingeForces.forEach(f => {
-          html += `Fy=${f.Fy.toFixed(2)}@${f.gx.toFixed(1)} `;
+      // 铰传递力（输入，已知外力）
+      const hin = step.hingeForces_in || step.hingeForces || [];
+      if(hin.length > 0) {
+        html += `　· 已受附属传来铰反力: `;
+        hin.forEach(f => html += `Fy=${f.Fy.toFixed(2)}@x=${f.gx.toFixed(1)} `);
+        html += '<br>';
+      }
+      // 铰传递过渡步骤（新增字段 transferList）
+      if(step.transferList && step.transferList.length > 0) {
+        html += `　· <span style="color:#d2a8ff;">将附属梁铰反力反向加到基本结构：</span><br>`;
+        step.transferList.forEach(t => {
+          html += `　　　在 ${t.node} 点加上荷载 Fy = ${t.Fy.toFixed(2)} (方向与附属梁所受相反)<br>`;
+        });
+      }
+      // 铰反力输出（附属层求出、待传给别人）
+      if(step.hingeReactions_out && Object.keys(step.hingeReactions_out).length > 0) {
+        html += `　· <span style="color:#f0883e;">附属层求出的铰支承力：</span><br>`;
+        for(const nd in step.hingeReactions_out) {
+          const hr = step.hingeReactions_out[nd];
+          html += `　　　${nd}铰：附属梁受 Fy=${hr.onSubordinate.toFixed(2)}  → 作用到相邻梁上 Fy=${hr.onAdjacent.toFixed(2)}<br>`;
+        }
+      }
+      // 求解结果：未知量
+      const unks = step.unknowns || [];
+      if(unks.length > 0) {
+        html += `　· 求解得未知量: `;
+        unks.forEach(u => {
+          if(Math.abs(u.value) < 0.001 && !u.isHinge) return;
+          const label = u.isHinge ? `${u.node}铰支承力` :
+                        u.comp === 'fx' ? `${u.node}Fx` :
+                        u.comp === 'fy' ? `${u.node}Fy` : `${u.node}M`;
+          html += `${label}=${u.value.toFixed(2)}  `;
         });
         html += '<br>';
       }
-      // 求解结果
-      html += `　求解结果: `;
-      step.unknowns.forEach(u => {
-        const label = u.isHinge ? `${u.node}铰传递力` :
-                      u.comp === 'fx' ? `${u.node}支座Fx` :
-                      u.comp === 'fy' ? `${u.node}支座Fy` : `${u.node}支座M`;
-        if(Math.abs(u.value) > 0.001)
-          html += `${label}=${u.value.toFixed(2)} `;
-      });
-      html += '<br>';
     });
+    html += `</div></div>`;
+  }
+
+  // ===== 控制截面展示 + 叠加法原理说明 =====
+  if(solution.ctrlSections) {
+    html += `<div class="result-block" style="border-color:#58a6ff66;">`;
+    html += `<div class="rb-title">控制截面与叠加法内力图</div>`;
+    html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.7;">`;
+    html += `<span style="color:#8b949e;">控制截面共 ${solution.ctrlSections.length} 个（位置×类型）：</span><br>`;
+    const kindCN = {'node':'节点/支座','point-force':'集中力','moment-left':'力偶左','moment-right':'力偶右','udl-start':'UDL起点','udl-end':'UDL终点','udl-mid':'UDL跨中'};
+    solution.ctrlSections.forEach((s, i) => {
+      const col = s.kind.includes('moment') ? '#ff7b72' :
+                  s.kind.includes('udl')    ? '#a5d6ff' :
+                  s.kind === 'point-force'  ? '#ffa657' : '#e6edf3';
+      html += `<span style="color:${col};">　${(i+1).toString().padStart(2,' ')}. x=${s.gx.toFixed(2).padStart(5,' ')}m — ${kindCN[s.kind]||s.kind}</span> `;
+      if(s.label) html += `<span style="color:#8b949e;"> [${s.label.replace(/\(CCW\+\)/g,'')}]</span>`;
+      html += `<br>`;
+    });
+    html += `<br><span style="color:#8b949e;">绘制原理 — 相邻控制截面之间用叠加法：</span><br>`;
+    html += `　· 先对每个控制截面用截面法求弯矩 M_左、M_右<br>`;
+    html += `　· 两点之间用直线连接：M_line(t) = M_L + (M_R-M_L)·t　(t∈[0,1])<br>`;
+    html += `　· 若区间内满布均布荷载 w：叠加上抛物线 w·L²·t·(1-t)/2<br>`;
+    html += `　· 弯矩图画在受拉侧：正 M 画向下（下侧受拉）、负 M 画向上<br>`;
+    html += `<br><span style="color:#d2a8ff;">★ 均布荷载段叠加法可视化：</span><br>`;
+    html += `　① 先画两端控制点弯矩连成的直线（基线，虚线）— 无均布荷载时的弯矩图<br>`;
+    html += `　② 在基线之上叠加均布荷载产生的抛物线得到真实弯矩图（实线）<br>`;
+    html += `　③ 跨中位置：基线弯矩与真实弯矩的差值 = <b style="color:#ffd700;">q·l²/8</b><br>`;
     html += `</div></div>`;
   }
 
@@ -888,6 +1199,32 @@ function updateCheckResults(){
     html += `</div></div>`;
     hIdx++;
   }
+
+  // 集中力偶处弯矩突变校核：ΔM = M_right - M_left = -M_couple（CCW+时使弯矩向下跳）
+  const couples = loads.filter(l => l.type === 'moment');
+  couples.forEach(ld => {
+    const mem = MEMBERS.find(m => m.id === ld.member); if(!mem) return;
+    const gxA = NODES[mem.nodeA].x;
+    const gx = gxA + ld.pos;
+    const M_left  = sectionMethodAt(solution.reactions, gx - 1e-6, 'left').M;
+    const M_right = sectionMethodAt(solution.reactions, gx + 1e-6, 'left').M;
+    const M_jump  = M_right - M_left;
+    const M_couple_ccw = ld.value * getMomentSign(ld);
+    const expected_jump = -M_couple_ccw; // CCW外力偶使弯矩图向下跳跃（负方向）
+    const ok = Math.abs(M_jump - expected_jump) < 0.05;
+    const col = ok ? '#3fb950' : '#f85149';
+    html += `<div class="result-block" style="border-color:${col}66;">`;
+    html += `<div class="rb-title">集中力偶弯矩突变校核 (${ld.member} pos=${ld.pos}m, M=${ld.value}${ld.direction==='ccw'?' CCW':' CW'})</div>`;
+    html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.7;">`;
+    html += `　左截面 M_<span style="color:#8b949e;">左</span> = ${M_left.toFixed(3)}  kN·m<br>`;
+    html += `　右截面 M_<span style="color:#8b949e;">右</span> = ${M_right.toFixed(3)} kN·m<br>`;
+    html += `　实测跳跃 ΔM = M_右 − M_左 = <b style="color:${col};">${M_jump.toFixed(3)}</b><br>`;
+    html += `　理论跳跃 ΔM = −M_力偶 = −${M_couple_ccw.toFixed(2)} = ${expected_jump.toFixed(2)}<br>`;
+    html += `<span style="color:${col};font-weight:700;">弯矩突变 |ΔM 误差| = ${Math.abs(M_jump-expected_jump).toFixed(3)}  ${ok?'✓ 合格（= 力偶大小）':'✗ 不合格'}</span><br>`;
+    html += `<span style="color:#8b949e;font-size:10px;">公式：任意截面 M = 左侧全部外力（支座反力 + 荷载）对该截面取矩的代数和</span><br>`;
+    html += `<span style="color:#8b949e;font-size:10px;">绘图：力偶位置 x 处生成两个控制截面 (x⁻=x-1e-6, x⁺=x+1e-6)，分别计算 M_左/M_右，以竖线连接表现突变</span>`;
+    html += `</div></div>`;
+  });
 
   // 支座反力展示
   html += `<div class="result-block" style="border-color:#58a6ff66;">`;
@@ -977,35 +1314,64 @@ function updateStatus(msg, isErr){
   s.innerHTML = isErr ? `<span style="color:#f85149;font-weight:600;">${msg}</span>` : msg;
 }
 
+// ==================== 绘图辅助函数 ====================
+// 画圆角矩形路径（不自动 fill/stroke，由调用方控制）
+function roundRect(ctx, x, y, w, h, r) {
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h);
+  ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r);
+  ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+}
+
 function drawStructure(){
   if(!showFrame) return;
   const beamY = 0;
+  // 梁高度为原来的1/4：原总高 32px (±16) → 新总高 8px (±4)
+  const beamHalfH = 4;
   MEMBERS.forEach(mem => {
     const na = NODES[mem.nodeA], nb = NODES[mem.nodeB];
     const sa = toS(na.x, beamY), sb = toS(nb.x, beamY);
-    // 梁体
+    // 梁体（总高 8px）
     ctx.save();
-    const grd = ctx.createLinearGradient(0,sa.y-10,0,sa.y+10);
-    grd.addColorStop(0,'#30363d'); grd.addColorStop(0.5,'#484f58'); grd.addColorStop(1,'#30363d');
+    const grd = ctx.createLinearGradient(0, sa.y-beamHalfH, 0, sa.y+beamHalfH);
+    grd.addColorStop(0, '#2d333b'); grd.addColorStop(0.5, '#444c56'); grd.addColorStop(1, '#2d333b');
     ctx.fillStyle = grd;
-    ctx.fillRect(sa.x, sa.y-9, sb.x-sa.x, 18);
-    ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1.5;
-    ctx.strokeRect(sa.x, sa.y-9, sb.x-sa.x, 18);
+    ctx.fillRect(sa.x, sa.y - beamHalfH, sb.x - sa.x, beamHalfH * 2);
+    ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1;
+    ctx.strokeRect(sa.x, sa.y - beamHalfH, sb.x - sa.x, beamHalfH * 2);
+    // 中轴线（细线虚线，标示集中力偶的作用轴线）
+    ctx.strokeStyle = 'rgba(88,166,255,0.4)'; ctx.lineWidth = 0.8; ctx.setLineDash([4,3]);
+    ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb.x, sb.y); ctx.stroke();
+    ctx.setLineDash([]);
     ctx.restore();
   });
   // 节点标签
   ctx.font = 'bold 12px "Segoe UI"'; ctx.fillStyle = '#e6edf3'; ctx.textAlign = 'center';
   NODE_IDS.forEach(id => {
     const s = toS(NODES[id].x, 0);
-    ctx.fillText(id, s.x, s.y - 16);
+    ctx.fillText(id, s.x, s.y - 12);
     // 节点小圆点
     if(hingeNodes[id]) {
       ctx.save();
       ctx.strokeStyle = '#a371f7'; ctx.fillStyle = '#a371f7'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(s.x, s.y, 3.5, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(s.x, s.y, 7, 0, Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(s.x, s.y, 3, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(s.x, s.y, 6, 0, Math.PI*2); ctx.stroke();
       ctx.font = 'bold 9px "Segoe UI"'; ctx.fillStyle = '#a371f7';
-      ctx.fillText('铰', s.x, s.y+20);
+      ctx.fillText('铰', s.x, s.y+16);
+      ctx.restore();
+    } else {
+      // 普通节点极小圆点
+      ctx.save();
+      ctx.fillStyle = '#58a6ff';
+      ctx.beginPath(); ctx.arc(s.x, s.y, 1.6, 0, Math.PI*2); ctx.fill();
       ctx.restore();
     }
   });
@@ -1055,6 +1421,8 @@ function drawSupport(x, type){
 }
 
 function drawLoads(){
+  // 统一梁半高（与drawStructure保持一致：总高8px → ±4px）
+  const beamHalfH = 4;
   MEMBERS.forEach(mem => {
     const na = NODES[mem.nodeA], nb = NODES[mem.nodeB];
     const by = 0;
@@ -1065,74 +1433,234 @@ function drawLoads(){
         const s = toS(gx, by);
         const {Fx,Fy} = getGlobalForce(ld);
         ctx.save();
-        ctx.strokeStyle = '#f85149'; ctx.fillStyle = '#f85149'; ctx.lineWidth = 2;
-        ctx.shadowColor = '#f85149'; ctx.shadowBlur = 4;
+        ctx.strokeStyle = '#f85149'; ctx.fillStyle = '#f85149';
+        ctx.shadowColor = '#f85149'; ctx.shadowBlur = 6;
         if(Fy !== 0) {
+          // —— 竖向集中力：优化工程标准箭头（更锐利、比例更协调） ——
           const down = Fy < 0;
-          const from = s.y - (down?35:4), to = s.y - (down?8:32);
-          ctx.beginPath(); ctx.moveTo(s.x, from); ctx.lineTo(s.x, to); ctx.stroke();
-          const tipY = to + (down?-8:+8);
-          ctx.beginPath(); ctx.moveTo(s.x-5, to); ctx.lineTo(s.x, tipY); ctx.lineTo(s.x+5, to); ctx.closePath(); ctx.fill();
+          const arrowLen = 44;          // 箭杆总长（略加长更醒目）
+          const ah = 12, aw = 5;        // 箭头（高12，半宽5 → 更锐利的三角）
+          const y_top = s.y - beamHalfH;  // 梁上边缘
+          const y_bot = s.y + beamHalfH;  // 梁下边缘
+          let y_tip, y_end;
+          if(down) {
+            y_tip = y_top;               // 向下：尖端精确碰到梁上沿
+            y_end = y_tip - arrowLen;
+          } else {
+            y_tip = y_bot;               // 向上：尖端精确碰到梁下沿
+            y_end = y_tip + arrowLen;
+          }
+          // 箭杆（中粗，起点稍大→末端更细的观感，用双线条模拟实心箭杆）
+          ctx.lineWidth = 3;
+          ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(s.x, y_end); ctx.lineTo(s.x, y_tip + (down?+ah:-ah)); ctx.stroke();
+          // 箭头三角（实心等腰三角形，更锐利：高/底=12/10≈2.4）
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          if(down) {
+            ctx.moveTo(s.x,         y_tip);        // 顶点（尖端正对梁缘）
+            ctx.lineTo(s.x - aw,    y_tip - ah);   // 左底角
+            ctx.lineTo(s.x + aw,    y_tip - ah);   // 右底角
+          } else {
+            ctx.moveTo(s.x,         y_tip);        // 向上顶点
+            ctx.lineTo(s.x - aw,    y_tip + ah);
+            ctx.lineTo(s.x + aw,    y_tip + ah);
+          }
+          ctx.closePath(); ctx.fill(); ctx.stroke();
+          // 作用点小圆（精确标示梁缘作用点位置）
           ctx.shadowBlur = 0;
-          ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
-          ctx.fillText(`${ld.value}kN`, s.x, down ? s.y-40 : s.y+42);
+          ctx.fillStyle = '#f85149';
+          ctx.beginPath(); ctx.arc(s.x, y_tip, 2.2, 0, Math.PI*2); ctx.fill();
+          // 箭尾短横线（工程图标准，略加长）
+          ctx.lineWidth = 1.8;
+          ctx.beginPath(); ctx.moveTo(s.x-aw-1, y_end); ctx.lineTo(s.x+aw+1, y_end); ctx.stroke();
+          // 数值标签（带圆角底色框）
+          const txt = `${ld.value} kN`;
+          ctx.font = 'bold 11px "Consolas",monospace'; ctx.textAlign = 'center';
+          const tw = ctx.measureText(txt).width;
+          const ty = down ? y_end - 8 : y_end + 15;
+          ctx.fillStyle = 'rgba(13,17,23,0.92)';
+          // 圆角矩形
+          roundRect(ctx, s.x - tw/2 - 6, ty - 10, tw+12, 15, 3);
+          ctx.fill();
+          ctx.fillStyle = '#f85149';
+          ctx.fillText(txt, s.x, ty+2);
         } else if(Fx !== 0) {
+          // —— 水平集中力：优化工程标准箭头 ——
           const right = Fx > 0;
-          const from = s.x + (right?32:4), to = s.x + (right?6:30);
-          ctx.beginPath(); ctx.moveTo(from, s.y-22); ctx.lineTo(to, s.y-22); ctx.stroke();
-          const tipX = to + (right?8:-8);
-          ctx.beginPath(); ctx.moveTo(to, s.y-27); ctx.lineTo(tipX, s.y-22); ctx.lineTo(to, s.y-17); ctx.closePath(); ctx.fill();
+          const arrowLen = 44;
+          const ah = 12, aw = 5;
+          const y_line = s.y - 28;        // 画在梁上方更远处，避开图线
+          let x_tip, x_end;
+          if(right) {
+            x_tip = s.x + 14;             // 箭头尖端指向作用点（梁右侧）
+            x_end = x_tip - arrowLen;
+          } else {
+            x_tip = s.x - 14;
+            x_end = x_tip + arrowLen;
+          }
+          // 引线：从作用点向上画到箭杆线，再水平画箭头
+          ctx.lineWidth = 1.4;
+          ctx.setLineDash([3,2]);
+          ctx.beginPath(); ctx.moveTo(s.x, s.y - beamHalfH); ctx.lineTo(s.x, y_line); ctx.stroke();
+          ctx.setLineDash([]);
+          // 箭杆
+          ctx.lineWidth = 3;
+          ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(x_end, y_line); ctx.lineTo(x_tip + (right?-ah:+ah), y_line); ctx.stroke();
+          // 三角箭头（更锐利）
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          if(right) {
+            ctx.moveTo(x_tip,      y_line);
+            ctx.lineTo(x_tip-ah,   y_line-aw);
+            ctx.lineTo(x_tip-ah,   y_line+aw);
+          } else {
+            ctx.moveTo(x_tip,      y_line);
+            ctx.lineTo(x_tip+ah,   y_line-aw);
+            ctx.lineTo(x_tip+ah,   y_line+aw);
+          }
+          ctx.closePath(); ctx.fill(); ctx.stroke();
+          // 箭尾短竖线
+          ctx.lineWidth = 1.8;
+          ctx.beginPath(); ctx.moveTo(x_end, y_line-aw-1); ctx.lineTo(x_end, y_line+aw+1); ctx.stroke();
+          // 标签
           ctx.shadowBlur = 0;
-          ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
-          ctx.fillText(`${ld.value}kN`, s.x, s.y-35);
+          const txt = `${ld.value} kN`;
+          ctx.font = 'bold 11px "Consolas",monospace'; ctx.textAlign = 'center';
+          const tw = ctx.measureText(txt).width;
+          ctx.fillStyle = 'rgba(13,17,23,0.92)';
+          roundRect(ctx, (x_tip+x_end)/2 - tw/2 - 6, y_line - 26, tw+12, 15, 3);
+          ctx.fill();
+          ctx.fillStyle = '#f85149';
+          ctx.fillText(txt, (x_tip+x_end)/2, y_line - 15);
         }
         ctx.restore();
       } else if(ld.type==='moment'){
+        // —— 集中力偶：精确绘制在梁的中轴线处（圆心=作用点），用双圆弧标示 ——
         const t = ld.pos / mem.L;
         const gx = na.x + t*(nb.x-na.x);
         const s = toS(gx, by);
         ctx.save();
-        ctx.strokeStyle = '#a371f7'; ctx.fillStyle = '#a371f7'; ctx.lineWidth = 2;
-        ctx.shadowColor = '#a371f7'; ctx.shadowBlur = 4;
-        const cx = s.x, cy = s.y-22, r = 14;
+        ctx.strokeStyle = '#a371f7'; ctx.fillStyle = '#a371f7';
+        ctx.shadowColor = '#a371f7'; ctx.shadowBlur = 6;
+        const cx = s.x;                 // 精确作用点：梁的水平坐标
+        const cy = s.y;                 // 精确作用点：梁中轴线（y=0）
+        const r_out = 11;               // 外弧半径
+        const r_in  = 7;                // 内弧半径（双弧更清晰）
         const ccw = getMomentSign(ld) > 0;
+        ctx.lineWidth = 2;
+
         if(ccw) {
-          ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI*0.2, Math.PI*1.8, false); ctx.stroke();
-          const ang = Math.PI*1.8;
-          const ax = cx + r*Math.cos(ang), ay = cy + r*Math.sin(ang);
-          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax+6, ay-4); ctx.lineTo(ax+3, ay+4); ctx.closePath(); ctx.fill();
+          // CCW（逆时针）：外弧 + 内弧 组成带形箭头，绕中轴线旋转
+          // 弧范围：从右方(0°附近) 逆时针绕到左方，箭头指向左下方
+          const angStart = Math.PI * 0.20;   // 36°（右下起点）
+          const angEnd   = Math.PI * 1.80;   // 324°（左下终点，逆时针跨越约288°）
+          // 外弧
+          ctx.beginPath(); ctx.arc(cx, cy, r_out, angStart, angEnd, false); ctx.stroke();
+          // 内弧（反向画以形成带）
+          ctx.beginPath(); ctx.arc(cx, cy, r_in,  angEnd, angStart, true);  ctx.stroke();
+          // 末端箭头三角形（逆时针切线方向）
+          const angT = angEnd;
+          const ax_o = cx + r_out*Math.cos(angT), ay_o = cy + r_out*Math.sin(angT);
+          const ax_i = cx + r_in *Math.cos(angT), ay_i = cy + r_in *Math.sin(angT);
+          const tx = angT + Math.PI/2;  // 前进方向（逆时针切线）：角度+90°
+          const tipX = (ax_o+ax_i)/2 + 9*Math.cos(tx);
+          const tipY = (ay_o+ay_i)/2 + 9*Math.sin(tx);
+          ctx.beginPath();
+          ctx.moveTo(ax_o, ay_o); ctx.lineTo(tipX, tipY); ctx.lineTo(ax_i, ay_i);
+          ctx.closePath(); ctx.fill();
         } else {
-          ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI*0.8, Math.PI*-0.2, true); ctx.stroke();
-          const ang = Math.PI*-0.2;
-          const ax = cx + r*Math.cos(ang), ay = cy + r*Math.sin(ang);
-          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax-6, ay+4); ctx.lineTo(ax-3, ay-4); ctx.closePath(); ctx.fill();
+          // CW（顺时针）：顺时针弧，箭头指向右下方
+          const angStart = Math.PI * 0.80;   // 144°（左下起点）
+          const angEnd   = Math.PI * (-0.20);// -36°（右下终点，顺时针跨越约288°）
+          ctx.beginPath(); ctx.arc(cx, cy, r_out, angStart, angEnd, true);  ctx.stroke();
+          ctx.beginPath(); ctx.arc(cx, cy, r_in,  angEnd, angStart, false); ctx.stroke();
+          // 末端箭头三角形（顺时针切线方向）
+          const angT = angEnd;
+          const ax_o = cx + r_out*Math.cos(angT), ay_o = cy + r_out*Math.sin(angT);
+          const ax_i = cx + r_in *Math.cos(angT), ay_i = cy + r_in *Math.sin(angT);
+          const tx = angT - Math.PI/2;  // 顺时针切线：角度-90°
+          const tipX = (ax_o+ax_i)/2 + 9*Math.cos(tx);
+          const tipY = (ay_o+ay_i)/2 + 9*Math.sin(tx);
+          ctx.beginPath();
+          ctx.moveTo(ax_o, ay_o); ctx.lineTo(tipX, tipY); ctx.lineTo(ax_i, ay_i);
+          ctx.closePath(); ctx.fill();
         }
+
+        // ★ 精确标示：中轴线上的作用点（实心圆点+十字，明确标示"集中力偶作用在梁中轴线"）
         ctx.shadowBlur = 0;
-        ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
+        // 外圆圈（突出显示中轴作用点）
+        ctx.strokeStyle = '#a371f7'; ctx.fillStyle = 'rgba(163,113,247,0.25)'; ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.arc(cx, cy, 4.5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        // 中轴线十字（水平+竖直）
+        ctx.strokeStyle = '#a371f7'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(cx-8, cy); ctx.lineTo(cx+8, cy); ctx.stroke();   // 水平（沿梁轴线）
+        ctx.beginPath(); ctx.moveTo(cx, cy-7); ctx.lineTo(cx, cy+7); ctx.stroke();   // 竖直
+        // 中心实心点
         ctx.fillStyle = '#a371f7';
-        ctx.fillText(`${ld.value}kN·m`, s.x, s.y-44);
+        ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI*2); ctx.fill();
+
+        // 数值标签（带圆角底色，置于上方避开图线）
+        const dirLabel = ccw ? '↺' : '↻';
+        const txt = `${dirLabel} ${ld.value} kN·m`;
+        ctx.font = 'bold 11px "Consolas",monospace'; ctx.textAlign = 'center';
+        const tw = ctx.measureText(txt).width;
+        const ty = cy - r_out - 14;
+        ctx.fillStyle = 'rgba(13,17,23,0.92)';
+        roundRect(ctx, cx - tw/2 - 7, ty - 10, tw+14, 15, 3);
+        ctx.fill();
+        ctx.fillStyle = '#a371f7';
+        ctx.fillText(txt, cx, ty+2);
         ctx.restore();
       } else if(ld.type==='udl'){
+        // 均布荷载：箭头尖端精确碰到梁上缘（beamHalfH=4），并同步梁高
+        const uHalfH = 4;
         const x1 = na.x + (ld.pos1/mem.L)*(nb.x-na.x);
         const x2 = na.x + (ld.pos2/mem.L)*(nb.x-na.x);
         const s1 = toS(x1, by), s2 = toS(x2, by);
+        const y_beam_top = s1.y - uHalfH;       // 梁上边缘
+        const arrow_head = 8;                   // 箭头三角形高度
+        const shaft_len = 26;                   // 箭杆长度（不含箭头）
+        const y_top_line = y_beam_top - shaft_len - arrow_head; // 顶部虚线位置
         ctx.save();
         ctx.strokeStyle = '#ffd700'; ctx.fillStyle = '#ffd700'; ctx.lineWidth = 1.8;
         ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 3;
-        const n = Math.max(3, Math.floor(Math.abs(s2.x-s1.x)/30));
+        // 顶部虚线（荷载布置范围线）
+        ctx.setLineDash([4,3]); ctx.strokeStyle = 'rgba(255,215,0,0.5)'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(s1.x, y_top_line); ctx.lineTo(s2.x, y_top_line); ctx.stroke();
+        ctx.setLineDash([]);
+        // 垂直箭头阵列（尖端正对梁上缘）
+        ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1.8;
+        const n = Math.max(3, Math.floor(Math.abs(s2.x-s1.x)/28));
         for(let i=0;i<n;i++){
           const tt = (i+0.5)/n;
           const x = s1.x + (s2.x-s1.x)*tt;
-          ctx.beginPath(); ctx.moveTo(x, s1.y-30); ctx.lineTo(x, s1.y-10); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(x-4, s1.y-10); ctx.lineTo(x, s1.y-4); ctx.lineTo(x+4, s1.y-10); ctx.closePath(); ctx.fill();
+          // 箭杆（从顶虚线到箭头尾）
+          ctx.beginPath(); ctx.moveTo(x, y_top_line); ctx.lineTo(x, y_beam_top - arrow_head); ctx.stroke();
+          // 箭头三角形（尖端精确到梁上缘 y_beam_top）
+          ctx.beginPath();
+          ctx.moveTo(x,              y_beam_top);
+          ctx.lineTo(x - 4,          y_beam_top - arrow_head);
+          ctx.lineTo(x + 4,          y_beam_top - arrow_head);
+          ctx.closePath(); ctx.fill();
         }
-        ctx.setLineDash([3,3]); ctx.strokeStyle = 'rgba(255,215,0,0.4)';
-        ctx.beginPath(); ctx.moveTo(s1.x, s1.y-5); ctx.lineTo(s2.x, s1.y-5); ctx.stroke();
-        ctx.setLineDash([]);
+        // 起止端小竖线（标示荷载精确范围）
+        ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(s1.x, y_top_line-3); ctx.lineTo(s1.x, y_beam_top + 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(s2.x, y_top_line-3); ctx.lineTo(s2.x, y_beam_top + 2); ctx.stroke();
+        // 数值标签（带圆角底色框）
         ctx.shadowBlur = 0;
-        ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
+        const txt = `${ld.value} kN/m`;
+        ctx.font = 'bold 10.5px "Consolas",monospace'; ctx.textAlign = 'center';
+        const tw = ctx.measureText(txt).width;
+        const cx = (s1.x+s2.x)/2;
+        const ty = y_top_line - 14;
+        ctx.fillStyle = 'rgba(13,17,23,0.92)';
+        roundRect(ctx, cx - tw/2 - 6, ty - 10, tw+12, 15, 3);
+        ctx.fill();
         ctx.fillStyle = '#ffd700';
-        ctx.fillText(`${ld.value}kN/m`, (s1.x+s2.x)/2, s1.y-38);
+        ctx.fillText(txt, cx, ty+2);
         ctx.restore();
       }
     });
@@ -1202,7 +1730,13 @@ function drawDiagram(type, color) {
   if(maxVal < 0.001) return;
   const maxPx = Math.min(SCALE*0.7, 55);
   const scale = maxPx / maxVal;
-  const sign = 1;
+  // 绘图标号方向（法向偏移符号）：
+  //   sign > 0：正值沿法向 ny>0（屏幕y向下，即梁下方）；负值则向上
+  //   sign < 0：正值沿法向反方向（屏幕y向上，即梁上方）；负值则向下
+  //   - 弯矩图(sign=+1)：正M画在梁下方（下侧受拉），负M画在梁上方（上侧受拉）
+  //   - 剪力图(sign=-1)：正V画在梁上方，负V画在梁下方
+  //   - 轴力图(sign=-1)：拉力（正N）画在梁上方，压力画在下方
+  const sign = (type === 'M') ? 1 : -1;
   MEMBERS.forEach(mem => {
     const f = mf[mem.id]; if(!f) return;
     const na = NODES[mem.nodeA], nb = NODES[mem.nodeB];
@@ -1211,55 +1745,235 @@ function drawDiagram(type, color) {
     const nx = -Math.sin(angle), ny = Math.cos(angle);
     const data = f[type]; if(!data) return;
     const n = data.length;
+    const xArr = f.x;  // ★ 实际局部坐标数组（距杆件起点的距离 a）
+    const L_mem = f.L || mem.L;
+
+    // ★ 预计算每个数据点对应的屏幕基准点（梁轴上的点）+ 偏移后的图线点
+    //   使用实际 x 坐标 xArr[i]/L_mem 作为 t，而非均匀索引 i/(n-1)
+    //   这样力偶左右两侧（x 仅差 1e-6）在屏幕上几乎重合，lineTo 会画出竖直突变线
+    const basePts = new Array(n);  // 梁轴上的基准点
+    const linePts = new Array(n);   // 偏移后的图线点
+    for(let i=0;i<n;i++){
+      const t = xArr[i] / L_mem;                  // 用实际 x 计算
+      const bx = sa.x + (sb.x-sa.x)*t;
+      const by = sa.y + (sb.y-sa.y)*t;
+      const v  = data[i]*scale*sign;
+      basePts[i] = {x: bx, y: by};
+      linePts[i] = {x: bx + nx*v, y: by + ny*v};
+    }
+    // ★ 突变对识别：相邻两点 x 极近但值差异大（集中力偶左右截面）
+    //   把它们的基准点强制对齐到同一 x，使图线在该处呈现真正的竖直线
+    for(let i=1;i<n;i++){
+      if(Math.abs(xArr[i] - xArr[i-1]) < 1e-4 && Math.abs(data[i] - data[i-1]) > 0.3){
+        const xShared = (basePts[i].x + basePts[i-1].x) / 2;
+        basePts[i].x = xShared; basePts[i-1].x = xShared;
+        linePts[i].x = xShared + (nx*data[i]*scale*sign);
+        linePts[i-1].x = xShared + (nx*data[i-1]*scale*sign);
+      }
+    }
+
     ctx.save();
     ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 2;
     ctx.shadowColor = color; ctx.shadowBlur = 6; ctx.globalAlpha = 0.15;
+    // 填充：图线 + 基准线（沿梁轴）闭合
     ctx.beginPath();
-    for(let i=0;i<n;i++){
-      const t = i/(n-1);
-      const bx = sa.x + (sb.x-sa.x)*t, by = sa.y + (sb.y-sa.y)*t;
-      const v = data[i]*scale*sign;
-      if(i===0) ctx.moveTo(bx, by);
-      ctx.lineTo(bx + nx*v, by + ny*v);
-    }
-    for(let i=n-1;i>=0;i--){ const t=i/(n-1); ctx.lineTo(sa.x+(sb.x-sa.x)*t, sa.y+(sb.y-sa.y)*t); }
+    ctx.moveTo(linePts[0].x, linePts[0].y);
+    for(let i=1;i<n;i++) ctx.lineTo(linePts[i].x, linePts[i].y);
+    for(let i=n-1;i>=0;i--) ctx.lineTo(basePts[i].x, basePts[i].y);
     ctx.closePath(); ctx.fill();
+
+    // 描边：仅画图线（不画基准线），并对突变对画醒目的竖直线
     ctx.globalAlpha = 1; ctx.lineWidth = 2.5;
     ctx.beginPath();
-    for(let i=0;i<n;i++){
-      const t=i/(n-1);
-      const bx=sa.x+(sb.x-sa.x)*t, by=sa.y+(sb.y-sa.y)*t;
-      const v=data[i]*scale*sign;
-      const px=bx+nx*v, py=by+ny*v;
-      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    ctx.moveTo(linePts[0].x, linePts[0].y);
+    for(let i=1;i<n;i++){
+      // 突变对：用更粗的线画竖线
+      if(Math.abs(xArr[i] - xArr[i-1]) < 1e-4 && Math.abs(data[i] - data[i-1]) > 0.3){
+        ctx.stroke();  // 先完成之前的路径
+        ctx.save();
+        ctx.lineWidth = 3.2; ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.moveTo(linePts[i-1].x, linePts[i-1].y);
+        ctx.lineTo(linePts[i].x, linePts[i].y);
+        ctx.stroke();
+        ctx.restore();
+        // 重启主路径
+        ctx.beginPath();
+        ctx.moveTo(linePts[i].x, linePts[i].y);
+      } else {
+        ctx.lineTo(linePts[i].x, linePts[i].y);
+      }
     }
     ctx.stroke();
-    const keyIdx = new Set([0, n-1]);
-    loads.filter(l=>l.member===mem.id).forEach(ld=>{
-      if(ld.type==='udl'){ keyIdx.add(Math.round(ld.pos1/mem.L*(n-1))); keyIdx.add(Math.round(ld.pos2/mem.L*(n-1))); }
-      else { keyIdx.add(Math.round(ld.pos/mem.L*(n-1))); }
-    });
-    let mi = 0, mv2 = Math.abs(data[0]);
-    for(let i=1;i<n;i++) if(Math.abs(data[i]) > mv2){ mv2 = Math.abs(data[i]); mi = i; }
-    keyIdx.add(mi);
+
+    // ★ 使用 computeInternalForcesBySuperposition 预计算的控制截面索引 ctrlIdx
+    //   仅这些索引输出标签；中间采样点只绘图不输出文字
+    const keyIdx = new Set(f.ctrlIdx || []);
     ctx.shadowBlur = 0; ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
-    [...keyIdx].sort((a,b)=>a-b).forEach(i => {
+    // —— 突变点标签防重叠：对于力偶/集中力造成的相邻两点跳跃，错开标注位置 ——
+    //   严格判定"突变对"：必须同时满足 (a) 索引相邻 (b) x 坐标几乎相同 (c) 数值差异显著
+    //   这样才能精准识别 x⁻/x⁺ 对，而不会误判 UDL 段抛物线上的相邻采样点
+    const idxArr = [...keyIdx].sort((a,b)=>a-b);
+    const isJumpPair = new Set();  // 记录哪些索引属于突变对（需要偏移标签）
+    if(type === 'M' || type === 'V' || type === 'N') {
+      for(let k=1; k<idxArr.length; k++) {
+        const i1 = idxArr[k-1], i2 = idxArr[k];
+        if(i2 - i1 <= 2 && i2 - i1 >= 1) {
+          const dx = Math.abs(xArr[i2] - xArr[i1]);   // x 坐标差
+          const dM = Math.abs(data[i2] - data[i1]);    // 弯矩差
+          // 力偶突变对：x 几乎相同（< 1e-4）但 M 差异大（> 0.5）
+          if(dx < 1e-4 && dM > 0.5) {
+            isJumpPair.add(i1); isJumpPair.add(i2);
+          }
+        }
+      }
+    }
+    idxArr.forEach((i, kInArr) => {
       if(i<0 || i>=n) return;
       const val = data[i];
       if(Math.abs(val) < 0.1) return;
-      const t = i/(n-1);
+      // ★ 使用实际 x 坐标（与图线一致），而非均匀索引
+      const t = xArr[i] / L_mem;
       const bx = sa.x+(sb.x-sa.x)*t, by=sa.y+(sb.y-sa.y)*t;
       const v = val*scale*sign;
       const px = bx+nx*v, py = by+ny*v;
       const offDir = v >= 0 ? 1 : -1;
-      const lx = px + nx*14*offDir, ly = py + ny*14*offDir;
-      const txt = type === 'M' ? Math.abs(val).toFixed(1) : (val>=0?'+':'') + val.toFixed(1);
+      // 突变点：左点标注额外向"左上方"偏移，右点向"右下方"偏移（避免重叠）
+      let lx, ly;
+      if(isJumpPair.has(i)) {
+        // 判断这是突变对中的"左点"还是"右点"
+        const pos = idxArr.indexOf(i);
+        // 基础偏移（沿法向）
+        const base_off = 16;
+        lx = px + nx*base_off*offDir;
+        ly = py + ny*base_off*offDir;
+        // 水平方向再额外错开：左右两点分别 ±12px
+        const extraX = (pos > 0 && isJumpPair.has(idxArr[pos-1])) ? 14 :
+                       (pos < idxArr.length-1 && isJumpPair.has(idxArr[pos+1])) ? -14 : 0;
+        lx += extraX;
+        // 竖直方向同步错开（沿法向±5px）
+        ly += ny*5*offDir * (extraX > 0 ? 1 : (extraX<0?-1:0));
+      } else {
+        lx = px + nx*14*offDir;
+        ly = py + ny*14*offDir;
+      }
+      // 弯矩图：取绝对值+标注"左/右"（若为力偶突变点）；剪力/轴力保留带符号
+      let txt;
+      if(type === 'M') {
+        txt = Math.abs(val).toFixed(1);
+        // 如果是突变点，加上"左"或"右"角标
+        if(isJumpPair.has(i)) {
+          const pos = idxArr.indexOf(i);
+          const tag = (pos < idxArr.length-1 && isJumpPair.has(idxArr[pos+1])) ? '左' :
+                      (pos > 0 && isJumpPair.has(idxArr[pos-1])) ? '右' : '';
+          if(tag) txt = `${tag} ${txt}`;
+        }
+      } else {
+        // 剪力图/轴力图：带符号；若为突变点（集中力处），也加"左/右"角标
+        txt = (val>=0?'+':'') + val.toFixed(1);
+        if(isJumpPair.has(i)) {
+          const pos = idxArr.indexOf(i);
+          const tag = (pos < idxArr.length-1 && isJumpPair.has(idxArr[pos+1])) ? '左' :
+                      (pos > 0 && isJumpPair.has(idxArr[pos-1])) ? '右' : '';
+          if(tag) txt = `${tag} ${txt}`;
+        }
+      }
       const tw = ctx.measureText(txt).width;
-      ctx.fillStyle = 'rgba(13,17,23,0.85)';
-      ctx.fillRect(lx-tw/2-3, ly-7, tw+6, 14);
+      // 带圆角的底色框
+      ctx.fillStyle = 'rgba(13,17,23,0.92)';
+      roundRect(ctx, lx-tw/2-4, ly-8, tw+8, 15, 2.5);
+      ctx.fill();
+      // 弯矩突变点：再画一条细引线（从标签指向图线上的点）
+      if(isJumpPair.has(i)) {
+        ctx.strokeStyle = color; ctx.globalAlpha = 0.55; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(px, py); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
       ctx.fillStyle = color;
       ctx.fillText(txt, lx, ly+3);
     });
+
+    // ★★★ 叠加法基线（虚线）：由控制点弯矩连线，贯穿全梁 ★★★
+    //   相邻控制点之间画虚线直线（无荷载段直线，UDL段基线也是直线）
+    //   真实弯矩 = 基线 + 抛物线（仅 UDL 段叠加）
+    if(type === 'M' && idxArr.length >= 2) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(linePts[idxArr[0]].x, linePts[idxArr[0]].y);
+      for(let k=1; k<idxArr.length; k++) {
+        const i = idxArr[k];
+        const iPrev = idxArr[k-1];
+        // 跳过突变对（x 几乎相同的相邻点，避免画零长度线段）
+        if(Math.abs(xArr[i] - xArr[iPrev]) < 1e-4) continue;
+        ctx.lineTo(linePts[i].x, linePts[i].y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // ★ UDL 段跨中差值标注 = q·l²/8（仅画差值连接线和标注，不重复标签）
+      loads.filter(l=>l.member===mem.id && l.type==='udl').forEach(ld => {
+        const w = ld.value;
+        const a1 = ld.pos1, a2 = ld.pos2;
+        const Lseg = a2 - a1;
+        if(Lseg < 1e-9) return;
+
+        const gxA_mem = na.x;
+        const M1 = sectionMethodAt(solution.reactions, gxA_mem + a1, 'left').M;
+        const M2 = sectionMethodAt(solution.reactions, gxA_mem + a2, 'left').M;
+
+        // 跨中：基线中点 vs 真实弯矩中点
+        const tMid = (a1 + a2) / 2 / L_mem;
+        const bxMid = sa.x + (sb.x-sa.x)*tMid, byMid = sa.y + (sb.y-sa.y)*tMid;
+        const M_base_mid = (M1 + M2) / 2;
+        const v_base_mid = M_base_mid * scale * sign;
+        const pxBaseMid = bxMid + nx*v_base_mid, pyBaseMid = byMid + ny*v_base_mid;
+        const M_parabola_mid = w * Lseg * Lseg / 8;  // t=0.5: w·L²·0.25/2 = w·L²/8
+        const M_real_mid = M_base_mid + M_parabola_mid;
+        const v_real_mid = M_real_mid * scale * sign;
+        const pxRealMid = bxMid + nx*v_real_mid, pyRealMid = byMid + ny*v_real_mid;
+
+        const offDir = v_real_mid >= 0 ? 1 : -1;
+
+        ctx.save();
+        // 连接线（基线中点 → 真实弯矩中点）
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.75;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(pxBaseMid, pyBaseMid);
+        ctx.lineTo(pxRealMid, pyRealMid);
+        ctx.stroke();
+
+        // 小圆点（基线中点 + 真实弯矩中点）
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.85;
+        ctx.beginPath(); ctx.arc(pxBaseMid, 1.8, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(pxRealMid, 2, 0, Math.PI*2); ctx.fill();
+
+        // 差值标注框：q·L²/8
+        const diffValue = Math.abs(M_parabola_mid);
+        const diffTxt = `Δ = q·l²/8 = ${diffValue.toFixed(2)} kN·m`;
+        ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
+        const tw = ctx.measureText(diffTxt).width;
+        const midX = (pxBaseMid + pxRealMid) / 2;
+        const midY = (pyBaseMid + pyRealMid) / 2;
+        const labelOffset = 28 * offDir;
+        const lx_diff = midX + nx * labelOffset;
+        const ly_diff = midY + ny * labelOffset;
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(13,17,23,0.92)';
+        roundRect(ctx, lx_diff - tw/2 - 6, ly_diff - 9, tw + 12, 15, 3);
+        ctx.fill();
+        ctx.fillStyle = '#ffd700'; // 差值用金黄色高亮
+        ctx.fillText(diffTxt, lx_diff, ly_diff + 3);
+        ctx.restore();
+      });
+    }
     ctx.restore();
   });
 }
