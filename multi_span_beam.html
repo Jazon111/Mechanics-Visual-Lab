@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多跨静定梁求解器 · 矩阵位移法</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:#0d1117;color:#e6edf3;overflow:hidden;}
+#app{display:flex;height:100vh;}
+#canvas-wrap{flex:1;position:relative;background:radial-gradient(circle at 50% 40%,#1b2433 0%,#0a0e16 70%);min-width:0;}
+canvas{display:block;width:100%;height:100%;position:absolute;top:0;left:0;}
+#toolbar{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(22,27,34,0.92);padding:6px 12px;border-radius:10px;border:1px solid #30363d;backdrop-filter:blur(8px);z-index:10;}
+.tb-btn{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;color:#8b949e;background:#21262d;border:1px solid #30363d;cursor:pointer;transition:all .2s;white-space:nowrap;}
+.tb-btn:hover{background:#30363d;color:#fff;}
+.tb-btn.active{color:#fff;background:#1f6feb;border-color:#388bfd;}
+.tb-sep{width:1px;background:#30363d;margin:0 2px;}
+#status{position:absolute;bottom:10px;left:10px;right:10px;background:rgba(22,27,34,0.95);padding:8px 18px;border-radius:10px;border:1px solid #30363d;font-size:12px;color:#8b949e;z-index:10;text-align:center;}
+#status .hl{color:#ffd700;font-weight:600;}
+#panel{width:340px;background:#161b22;border-left:1px solid #30363d;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;}
+#panel-header{padding:12px 14px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:8px;}
+#panel-header .dot{width:8px;height:8px;border-radius:50%;background:#ffd700;box-shadow:0 0 8px #ffd700;}
+#panel-header h2{font-size:14px;color:#e6edf3;}
+#tabs{display:flex;background:#0d1117;border-bottom:1px solid #30363d;}
+.tab{flex:1;padding:9px 8px;text-align:center;font-size:11.5px;font-weight:600;color:#484f58;cursor:pointer;transition:all .2s;border-bottom:2px solid transparent;}
+.tab:hover{color:#8b949e;}
+.tab.active{color:#58a6ff;border-bottom-color:#1f6feb;}
+#tab-content{flex:1;overflow-y:auto;padding:12px;}
+#tab-content::-webkit-scrollbar{width:5px;}
+#tab-content::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px;}
+.section{margin-bottom:14px;}
+.section-title{font-size:11px;color:#8b949e;letter-spacing:1.5px;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.section-title::before{content:"";width:3px;height:12px;background:#1f6feb;border-radius:2px;}
+.member-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+.member-row label{font-size:10.5px;color:#8b949e;width:50px;flex-shrink:0;}
+.member-row input{flex:1;padding:4px 6px;background:#0d1117;border:1px solid #21262d;border-radius:4px;color:#c9d1d9;font-size:11px;}
+.member-row .del-btn{width:24px;height:24px;background:#21262d;border:1px solid #30363d;color:#f85149;border-radius:4px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;}
+.member-row .del-btn:hover{background:#f85149;color:#fff;}
+.member-row .add-btn{width:24px;height:24px;background:#21262d;border:1px solid #30363d;color:#3fb950;border-radius:4px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;}
+.member-row .add-btn:hover{background:#3fb950;color:#fff;}
+.support-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+.support-row .node-label{font-size:11px;font-weight:700;color:#58a6ff;width:40px;}
+.support-row select{flex:1;padding:4px 6px;background:#0d1117;border:1px solid #21262d;border-radius:4px;color:#c9d1d9;font-size:11px;}
+.load-item{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px 10px;margin-bottom:7px;font-size:11.5px;}
+.load-item .load-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;}
+.load-item .load-type{font-weight:700;color:#58a6ff;font-size:11px;}
+.load-item .del-btn{background:#21262d;border:1px solid #30363d;color:#f85149;border-radius:4px;width:20px;height:20px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;}
+.load-item .del-btn:hover{background:#f85149;color:#fff;}
+.load-item label{font-size:10px;color:#8b949e;display:block;margin-top:4px;}
+.load-item input,.load-item select{width:100%;padding:4px 6px;background:#0d1117;border:1px solid #21262d;border-radius:4px;color:#c9d1d9;font-size:11px;margin-top:2px;}
+.load-row-2{display:flex;gap:6px;}
+.load-row-2 > div{flex:1;}
+.btn-primary{width:100%;padding:9px;background:linear-gradient(180deg,#1f6feb,#388bfd);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;}
+.btn-primary:hover{filter:brightness(1.1);transform:translateY(-1px);}
+.btn-secondary{width:100%;padding:7px;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;margin-top:6px;}
+.btn-secondary:hover{background:#30363d;color:#fff;}
+.result-block{background:rgba(22,27,34,0.7);border:1px solid #30363d;border-left:3px solid #1f6feb;border-radius:8px;padding:10px 12px;margin-bottom:10px;}
+.result-block .rb-title{font-size:11px;font-weight:700;color:#58a6ff;margin-bottom:6px;letter-spacing:0.5px;}
+.member-result{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px 10px;margin-bottom:7px;}
+.mr-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;}
+.mr-name{font-size:11.5px;font-weight:700;color:#ffd700;}
+.mr-row{display:flex;justify-content:space-between;font-size:10px;color:#8b949e;font-family:"Consolas",monospace;margin-top:2px;}
+.mr-row .v{color:#c9d1d9;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-wrap">
+    <canvas id="scene"></canvas>
+    <div id="toolbar">
+      <button class="tb-btn active" id="btn-frame" onclick="showFrame=!showFrame;this.classList.toggle('active');render()">结构图</button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn active" id="btn-M" onclick="showM=!showM;this.classList.toggle('active');render()">M图</button>
+      <button class="tb-btn" id="btn-V" onclick="showV=!showV;this.classList.toggle('active');render()">V图</button>
+      <button class="tb-btn" id="btn-N" onclick="showN=!showN;this.classList.toggle('active');render()">N图</button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn" id="btn-check" onclick="showCheck=!showCheck;this.classList.toggle('active');render()">校核</button>
+    </div>
+    <div id="status">待计算 · 请在右侧设置结构参数和荷载后点击「<span class="hl">求解</span>」</div>
+  </div>
+  <div id="panel">
+    <div id="panel-header"><span class="dot"></span><h2>多跨静定梁求解器</h2></div>
+    <div id="tabs">
+      <div class="tab active" data-tab="structure" onclick="switchTab('structure')">结构</div>
+      <div class="tab" data-tab="load" onclick="switchTab('load')">荷载</div>
+      <div class="tab" data-tab="result" onclick="switchTab('result')">结果</div>
+    </div>
+    <div id="tab-content">
+      <div id="tab-structure">
+        <div class="section">
+          <div class="section-title">梁段长度设置 (m)</div>
+          <div id="member-lengths"></div>
+          <div style="margin-top:8px;display:flex;gap:5px;">
+            <button class="btn-secondary" style="margin-top:0;flex:1;" onclick="addMember()">+ 添加梁段</button>
+            <button class="btn-secondary" style="margin-top:0;flex:1;" onclick="removeLastMember()">− 删除末段</button>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-title">支座设置</div>
+          <div id="supports-area"></div>
+        </div>
+        <div class="section">
+          <div class="section-title">铰节点设置</div>
+          <div id="hinges-area"></div>
+        </div>
+        <div class="section" style="position:sticky;bottom:0;background:#161b22;padding:10px 0;margin:0 -12px -12px;border-top:1px solid #30363d;">
+          <button class="btn-primary" onclick="applyStructure()">应用结构设置</button>
+          <div style="font-size:10px;color:#6e7681;margin-top:5px;text-align:center;">修改梁段/支座/铰后请点击应用</div>
+        </div>
+        <div class="section">
+          <div class="section-title">快速示例</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button class="btn-secondary" style="margin-top:0;flex:1;" onclick="loadExample(1)">例1·多跨静定梁</button>
+            <button class="btn-secondary" style="margin-top:0;flex:1;" onclick="loadExample(2)">例2·简支+悬臂</button>
+            <button class="btn-secondary" style="margin-top:0;flex-basis:100%;" onclick="loadExample(3)">例3·纯简支梁 UDL验证</button>
+          </div>
+        </div>
+      </div>
+      <div id="tab-load" style="display:none;">
+        <div class="section">
+          <div class="section-title">添加荷载</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button class="btn-secondary" style="margin-top:0;" onclick="addLoad('point')">+ 集中力</button>
+            <button class="btn-secondary" style="margin-top:0;" onclick="addLoad('moment')">+ 集中力偶</button>
+            <button class="btn-secondary" style="margin-top:0;" onclick="addLoad('udl')">+ 均布荷载</button>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-title">荷载列表</div>
+          <div id="loads-list">
+            <div style="font-size:11px;color:#484f58;text-align:center;padding:12px 0;">暂无荷载，点击上方按钮添加</div>
+          </div>
+        </div>
+      </div>
+      <div id="tab-result" style="display:none;">
+        <div id="solve-actions">
+          <button class="btn-primary" onclick="solveAndRender()">▶ 求解结构内力</button>
+          <button class="btn-secondary" onclick="clearResults()">清空结果</button>
+        </div>
+        <div id="check-results" style="margin-top:12px;"></div>
+        <div id="member-results" style="margin-top:12px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== 全局配置 ====================
+const E = 2e8;
+const A_sec = 0.01;
+const I_sec = 0.0001;
+
+// ==================== 默认结构 (例1) ====================
+// 节点: A(0), G(1), H(3), B(4), C(5), I(6), D(8), E(9), J(10), F(13)
+// 但在矩阵位移法中，我们用节点+梁段+铰来定义
+let NODE_IDS = [];
+let NODES = {};
+let MEMBERS = [];
+let memberLengths = [];
+let SUPPORT_TYPES = {};
+let hingeNodes = {}; // nodeId -> true/false 是否为铰节点
+let DOF_TOTAL = 0;
+let dofMap = {};
+
+function buildFromLengths(lengths, opts={}) {
+  // lengths: [L1, L2, L3, ...] 每个梁段长度
+  // 节点: A, B, C, D, E, F, G, H, I, J, K, L, ...
+  const prevSupports = opts.preserve ? {...SUPPORT_TYPES} : {};
+  const prevHinges = opts.preserve ? {...hingeNodes} : {};
+  const prevLoads = opts.preserve ? loads.slice() : [];
+  NODE_IDS = [];
+  NODES = {};
+  MEMBERS = [];
+  const maxNodes = 14; // A-N
+  const base = 'A'.charCodeAt(0);
+  for(let i=0;i<lengths.length+1 && i<maxNodes;i++){
+    NODE_IDS.push(String.fromCharCode(base+i));
+  }
+  let x = 0;
+  NODE_IDS.forEach((id,i) => {
+    NODES[id] = {id, x, y:0};
+    if(i < lengths.length){
+      const memId = NODE_IDS[i]+NODE_IDS[i+1];
+      MEMBERS.push({id:memId, nodeA:id, nodeB:NODE_IDS[i+1], L:lengths[i], angle:0});
+      x += lengths[i];
+    }
+  });
+  DOF_TOTAL = NODE_IDS.length * 3;
+  dofMap = {};
+  NODE_IDS.forEach((id, i) => { dofMap[id] = [i*3, i*3+1, i*3+2]; });
+  // 默认支座: 两端无 (保留已存在的)
+  SUPPORT_TYPES = {};
+  NODE_IDS.forEach(id => { SUPPORT_TYPES[id] = prevSupports[id] || 'none'; });
+  // 默认铰节点: 全为刚接 (保留已存在的)
+  hingeNodes = {};
+  NODE_IDS.forEach(id => { if(prevHinges[id]) hingeNodes[id] = true; });
+  memberLengths = lengths.slice();
+  // 保留荷载 (只保留引用仍然存在的杆件)
+  loads = prevLoads.filter(ld => MEMBERS.find(m => m.id === ld.member));
+  solved = false;
+  solution = null;
+}
+
+// ==================== 示例 ====================
+function loadExample(num) {
+  if(num === 1) {
+    // 例1: 多跨静定梁 13m: A(0)-4m-B(4)-1m-C(5)-3m-D(8)-1m-E(9)-4m-F(13)
+    // 基本部分: AB段(A固定铰+B可动铰)、DEF段(D可动铰+F可动铰)
+    // 附属部分: CD段(C铰+D铰)，通过C铰依附于AB，D铰处有支座
+    buildFromLengths([4, 1, 3, 1, 4]);
+    SUPPORT_TYPES['A'] = 'pinned';
+    SUPPORT_TYPES['B'] = 'roller';
+    SUPPORT_TYPES['D'] = 'roller';
+    SUPPORT_TYPES['F'] = 'roller';
+    hingeNodes['C'] = true;
+    hingeNodes['D'] = true;
+    // 默认荷载
+    loads = [
+      {id:Date.now()+1, type:'point', member:'AB', pos:1, value:8, direction:'down'},
+      {id:Date.now()+2, type:'point', member:'AB', pos:3, value:8, direction:'down'},
+      {id:Date.now()+3, type:'moment', member:'CD', pos:1, value:24, direction:'ccw'},
+      {id:Date.now()+4, type:'udl', member:'EF', value:4, pos1:0, pos2:4}
+    ];
+  } else if(num === 2) {
+    // 例2: 简支 6m + 悬臂 2m, 铰支座A, 可动铰B(6m), 荷载在悬臂端C(8m)
+    buildFromLengths([6, 2]);
+    SUPPORT_TYPES['A'] = 'pinned';
+    SUPPORT_TYPES['B'] = 'roller';
+    loads = [
+      {id:Date.now()+1, type:'udl', member:'AB', value:10, pos1:0, pos2:6},
+      {id:Date.now()+2, type:'point', member:'BC', pos:2, value:30, direction:'down'}
+    ];
+  } else if(num === 3) {
+    // 例3: 纯简支梁 L=6m UDL w=10kN/m → 理论解: R_A=R_B=30kN↑, M_max=45kN·m (跨中,下侧受拉)
+    buildFromLengths([6]);
+    SUPPORT_TYPES['A'] = 'pinned';
+    SUPPORT_TYPES['B'] = 'roller';
+    loads = [
+      {id:Date.now()+1, type:'udl', member:'AB', value:10, pos1:0, pos2:6}
+    ];
+  }
+  pendingLengths = MEMBERS.map(m => m.L);
+  renderPanel();
+  render();
+  updateStatus(`已加载示例${num} · 点击「求解结构内力」开始计算`);
+}
+
+// ==================== DOF与支座约束 ====================
+function getSupportConstraints(type) {
+  switch(type) {
+    case 'fixed':  return [true, true, true];
+    case 'pinned': return [true, true, false];
+    case 'roller': return [false, true, false];
+    case 'slider': return [true, false, true];
+    default:       return [false, false, false];
+  }
+}
+function getSupports() {
+  const s = {};
+  NODE_IDS.forEach(id => { s[id] = getSupportConstraints(SUPPORT_TYPES[id] || 'none'); });
+  return s;
+}
+
+// ==================== 方向辅助 ====================
+function getGlobalForce(ld){
+  const P=ld.value;
+  if(ld.direction==='down')  return {Fx:0, Fy:-P};
+  if(ld.direction==='up')    return {Fx:0, Fy:P};
+  if(ld.direction==='right') return {Fx:P, Fy:0};
+  if(ld.direction==='left')  return {Fx:-P, Fy:0};
+  return {Fx:0, Fy:0};
+}
+function getMomentSign(ld){ return ld.direction==='cw' ? -1 : 1; }
+
+// ==================== 矩阵位移法核心 ====================
+function elementK(mem) {
+  const L = mem.L, angle = mem.angle;
+  const c = Math.cos(angle), s = Math.sin(angle);
+  const eal = E*A_sec/L, eil = E*I_sec/L, eil2 = E*I_sec/(L*L), eil3 = E*I_sec/(L*L*L);
+  const k_local = [
+    [eal, 0, 0, -eal, 0, 0],
+    [0, 12*eil3, 6*eil2, 0, -12*eil3, 6*eil2],
+    [0, 6*eil2, 4*eil, 0, -6*eil2, 2*eil],
+    [-eal, 0, 0, eal, 0, 0],
+    [0, -12*eil3, -6*eil2, 0, 12*eil3, -6*eil2],
+    [0, 6*eil2, 2*eil, 0, -6*eil2, 4*eil]
+  ];
+  const T = [
+    [c, s, 0, 0, 0, 0],
+    [-s, c, 0, 0, 0, 0],
+    [0, 0, 1, 0, 0, 0],
+    [0, 0, 0, c, s, 0],
+    [0, 0, 0, -s, c, 0],
+    [0, 0, 0, 0, 0, 1]
+  ];
+  // T^T * k_local * T
+  const TT = transpose(T);
+  return matMul(matMul(TT, k_local), T);
+}
+
+function matMul(A,B){
+  const m=A.length, n=B[0].length, p=B.length;
+  const C=Array.from({length:m},()=>Array(n).fill(0));
+  for(let i=0;i<m;i++) for(let j=0;j<n;j++) for(let k=0;k<p;k++) C[i][j]+=A[i][k]*B[k][j];
+  return C;
+}
+function transpose(A){ return A[0].map((_,j)=>A.map(r=>r[j])); }
+
+function computeEquivalentLoads(){
+  const F = Array(DOF_TOTAL).fill(0);
+  loads.forEach(ld => {
+    const mem = MEMBERS.find(m=>m.id===ld.member);
+    if(!mem) return;
+    const L=mem.L, angle=mem.angle;
+    const c=Math.cos(angle), s=Math.sin(angle);
+    const dA=dofMap[mem.nodeA], dB=dofMap[mem.nodeB];
+    if(ld.type==='udl'){
+      const w=ld.value, Lspan=ld.pos2-ld.pos1;
+      const FyA=w*Lspan/2, FyB=w*Lspan/2;
+      const MA=w*Lspan*Lspan/12, MB=-w*Lspan*Lspan/12;
+      const fA_local=[0,-FyA,-MA], fB_local=[0,-FyB,-MB];
+      const fA_global=[c*fA_local[0]-s*fA_local[1], s*fA_local[0]+c*fA_local[1], fA_local[2]];
+      const fB_global=[c*fB_local[0]-s*fB_local[1], s*fB_local[0]+c*fB_local[1], fB_local[2]];
+      for(let i=0;i<3;i++){ F[dA[i]]+=fA_global[i]; F[dB[i]]+=fB_global[i]; }
+    } else if(ld.type==='point'){
+      const P=ld.value, a=ld.pos, b=L-a;
+      const {Fx,Fy}=getGlobalForce(ld);
+      const Nloc=c*Fx+s*Fy, Vloc=-s*Fx+c*Fy;
+      const NA=Nloc*b/L, NB=Nloc*a/L;
+      const VA=Vloc*b/L, VB=Vloc*a/L;
+      const MA=Vloc*a*b*b/(L*L), MB=-Vloc*a*a*b/(L*L);
+      const fA_local=[NA,VA,MA], fB_local=[NB,VB,MB];
+      const fA_global=[c*fA_local[0]-s*fA_local[1], s*fA_local[0]+c*fA_local[1], fA_local[2]];
+      const fB_global=[c*fB_local[0]-s*fB_local[1], s*fB_local[0]+c*fB_local[1], fB_local[2]];
+      for(let i=0;i<3;i++){ F[dA[i]]+=fA_global[i]; F[dB[i]]+=fB_global[i]; }
+    } else if(ld.type==='moment'){
+      const m=ld.value*getMomentSign(ld), a=ld.pos, b=L-a;
+      const eqVA=-2*m*a/(L*L), eqVB=2*m*a/(L*L);
+      const eqMA=m*b*(2*a-b)/(L*L), eqMB=-m*a*(2*b-a)/(L*L);
+      const fA_local=[0,eqVA,eqMA], fB_local=[0,eqVB,eqMB];
+      const fA_global=[c*fA_local[0]-s*fA_local[1], s*fA_local[0]+c*fA_local[1], fA_local[2]];
+      const fB_global=[c*fB_local[0]-s*fB_local[1], s*fB_local[0]+c*fB_local[1], fB_local[2]];
+      for(let i=0;i<3;i++){ F[dA[i]]+=fA_global[i]; F[dB[i]]+=fB_global[i]; }
+    }
+  });
+  return F;
+}
+
+function computeInternalForces(U){
+  const results = {};
+  MEMBERS.forEach(mem => {
+    const L=mem.L, angle=mem.angle;
+    const c=Math.cos(angle), s=Math.sin(angle);
+    const dofsA=dofMap[mem.nodeA], dofsB=dofMap[mem.nodeB];
+    const uA=[U[dofsA[0]],U[dofsA[1]],U[dofsA[2]]];
+    const uB=[U[dofsB[0]],U[dofsB[1]],U[dofsB[2]]];
+    const uAL=c*uA[0]+s*uA[1], vAL=-s*uA[0]+c*uA[1], thAL=uA[2];
+    const uBL=c*uB[0]+s*uB[1], vBL=-s*uB[0]+c*uB[1], thBL=uB[2];
+    const eal=E*A_sec/L, eil=E*I_sec/L, eil2=E*I_sec/(L*L), eil3=E*I_sec/(L*L*L);
+    const Na_el=eal*(uBL-uAL);
+    const VyA_el=12*eil3*vAL+6*eil2*thAL-12*eil3*vBL+6*eil2*thBL;
+    const MA_el=6*eil2*vAL+4*eil*thAL-6*eil2*vBL+2*eil*thBL;
+    const Nb_el=Na_el;
+    const VyB_el=-12*eil3*vAL-6*eil2*thAL+12*eil3*vBL-6*eil2*thBL;
+    const MB_el=6*eil2*vAL+2*eil*thAL-6*eil2*vBL+4*eil*thBL;
+    let NA_fem=0,VyA_fem=0,MA_fem=0,NB_fem=0,VyB_fem=0,MB_fem=0;
+    loads.filter(l=>l.member===mem.id).forEach(ld => {
+      if(ld.type==='udl'){
+        const w=ld.value, Lspan=ld.pos2-ld.pos1;
+        VyA_fem+=w*Lspan/2; VyB_fem+=w*Lspan/2;
+        MA_fem+=w*Lspan*Lspan/12; MB_fem+=-w*Lspan*Lspan/12;
+      } else if(ld.type==='point'){
+        const P=ld.value, a=ld.pos, b=L-a;
+        const {Fx,Fy}=getGlobalForce(ld);
+        const Nloc=c*Fx+s*Fy, Vloc=-s*Fx+c*Fy;
+        NA_fem+=-Nloc*b/L; NB_fem+=-Nloc*a/L;
+        VyA_fem+=-Vloc*b/L; VyB_fem+=-Vloc*a/L;
+        MA_fem+=-Vloc*a*b*b/(L*L); MB_fem+=Vloc*a*a*b/(L*L);
+      } else if(ld.type==='moment'){
+        const m=ld.value*getMomentSign(ld), a=ld.pos, b=L-a;
+        const MA=-m*b*(2*a-b)/(L*L), MB=-m*a*(a-2*b)/(L*L);
+        const VA=2*m*a/(L*L), VB=-2*m*a/(L*L);
+        MA_fem+=MA; MB_fem+=MB; VyA_fem+=VA; VyB_fem+=VB;
+      }
+    });
+    const NA=Na_el+NA_fem, VyA=VyA_el+VyA_fem, MA=-(MA_el+MA_fem);
+    const pts=80, xs=[], Ms=[], Vs=[], Ns=[];
+    for(let i=0;i<=pts;i++){
+      const x=(i/pts)*L; xs.push(x);
+      let m=MA+VyA*x, v=VyA, n=NA;
+      loads.filter(l=>l.member===mem.id).forEach(ld=>{
+        if(ld.type==='udl'){
+          const a=ld.pos1, Lspan=ld.pos2-ld.pos1, w=ld.value;
+          if(x>=a){ const dx=Math.min(x-a,Lspan); m-=w*dx*dx/2; v-=w*dx; }
+        } else if(ld.type==='point'){
+          if(x>ld.pos){
+            const {Fx,Fy}=getGlobalForce(ld);
+            const Nloc=c*Fx+s*Fy, Vloc=-s*Fx+c*Fy;
+            m+=Vloc*(x-ld.pos); v+=Vloc; n+=Nloc;
+          }
+        } else if(ld.type==='moment'){
+          if(x>ld.pos){
+            const m_local = ld.value*getMomentSign(ld);
+            m-=m_local;
+          }
+        }
+      });
+      Ms.push(m); Vs.push(v); Ns.push(n);
+    }
+    // 用截面数组端点值作为端力，保证与剪力/轴力/弯矩约定一致 (正剪力使隔离体顺时针转，正弯矩下侧受拉，正轴力受拉)
+    const last = Ms.length - 1;
+    results[mem.id]={M:Ms,V:Vs,N:Ns,x:xs,L,angle,
+      start:{N:Ns[0],V:Vs[0],M:Ms[0]},
+      end:  {N:Ns[last],V:Vs[last],M:Ms[last]}};
+  });
+  return results;
+}
+
+function gaussSolve(A,b){
+  const n=A.length, M=A.map((r,i)=>[...r,b[i]]);
+  for(let i=0;i<n;i++){
+    let mr=i;
+    for(let k=i+1;k<n;k++) if(Math.abs(M[k][i])>Math.abs(M[mr][i])) mr=k;
+    [M[i],M[mr]]=[M[mr],M[i]];
+    const p=M[i][i]; if(Math.abs(p)<1e-14) continue;
+    for(let k=i;k<=n;k++) M[i][k]/=p;
+    for(let k=0;k<n;k++){ if(k===i) continue; const f=M[k][i]; for(let j=i;j<=n;j++) M[k][j]-=f*M[i][j]; }
+  }
+  return M.map(r=>r[n]);
+}
+
+// ==================== 静定多跨梁：附属/基本结构识别 + 分层求解 ====================
+
+// 按铰节点将梁拆分为多个"层"（区段）
+function identifyLayers() {
+  const layers = [];
+  let startIdx = 0;
+  for(let i=1; i<NODE_IDS.length; i++) {
+    const id = NODE_IDS[i];
+    if(hingeNodes[id] || i === NODE_IDS.length-1) {
+      const nodes = NODE_IDS.slice(startIdx, i+1);
+      const members = MEMBERS.filter(m =>
+        nodes.includes(m.nodeA) && nodes.includes(m.nodeB)
+      );
+      // 统计该层内能提供竖向约束(fy)的支座节点
+      const vertSupports = nodes.filter(n =>
+        getSupportConstraints(SUPPORT_TYPES[n] || 'none')[1]
+      );
+      // 基本结构：竖向支座 ≥ 2（能独立承受竖向荷载）
+      const isBasic = vertSupports.length >= 2;
+      layers.push({
+        id: `L${layers.length+1}`,
+        startNode: NODE_IDS[startIdx],
+        endNode: id,
+        nodes, members,
+        vertSupports,
+        isBasic,
+        type: isBasic ? '基本结构' : '附属结构'
+      });
+      startIdx = i;
+    }
+  }
+  return layers;
+}
+
+// 收集某层的外力（荷载 + 已知铰传递力）
+function collectLayerForces(layer, hingeTransfer) {
+  const ext = [];
+  // 1. 荷载
+  layer.members.forEach(mem => {
+    const gxA = NODES[mem.nodeA].x;
+    loads.filter(ld => ld.member === mem.id).forEach(ld => {
+      if(ld.type === 'udl') {
+        const w = ld.value, a = ld.pos1, b = ld.pos2;
+        if(b > a) ext.push({Fx:0, Fy:-w*(b-a), M:0, gx: gxA + (a+b)/2, src:'udl'});
+      } else if(ld.type === 'point') {
+        const {Fx,Fy} = getGlobalForce(ld);
+        ext.push({Fx, Fy, M:0, gx: gxA + ld.pos, src:'point'});
+      } else if(ld.type === 'moment') {
+        ext.push({Fx:0, Fy:0, M: ld.value*getMomentSign(ld), gx: gxA + ld.pos, src:'moment'});
+      }
+    });
+  });
+  // 2. 已知铰传递力（来自已求解的附属层）
+  layer.nodes.forEach(n => {
+    if(hingeNodes[n] && hingeTransfer[n] !== undefined) {
+      ext.push({Fx:0, Fy: hingeTransfer[n], M:0, gx: NODES[n].x, src:'hinge-transfer'});
+    }
+  });
+  return ext;
+}
+
+// 对单层建立平衡方程并求解
+function solveLayerEquilibrium(layer, reactions, hingeTransfer) {
+  const ext = collectLayerForces(layer, hingeTransfer);
+  // 未知量：该层内的支座反力 + 附属层端点铰的铰传递力
+  const unk = [];
+  layer.nodes.forEach(n => {
+    // 附属层：边界铰节点作为铰传递力未知量，不走支座反力
+    if(!layer.isBasic && (n === layer.startNode || n === layer.endNode) && hingeNodes[n]) return;
+    // 铰节点已有传递力且无支座 → 纯传递点，跳过
+    if(hingeNodes[n] && hingeTransfer[n] !== undefined) {
+      const sc0 = getSupportConstraints(SUPPORT_TYPES[n] || 'none');
+      if(!sc0[0] && !sc0[1] && !sc0[2]) return;
+    }
+    const sc = getSupportConstraints(SUPPORT_TYPES[n] || 'none');
+    if(sc[0]) unk.push({node:n, comp:'fx'});
+    if(sc[1]) unk.push({node:n, comp:'fy'});
+    if(sc[2]) unk.push({node:n, comp:'m'});
+  });
+  // 附属层：端点铰添加铰传递力未知量（无论是否有支座，支座归基本层处理）
+  if(!layer.isBasic) {
+    [layer.startNode, layer.endNode].forEach(n => {
+      if(hingeNodes[n] && hingeTransfer[n] === undefined) {
+        unk.push({node:n, comp:'fy', isHinge:true});
+      }
+    });
+  }
+
+  const n = unk.length;
+  if(n === 0) return {ext, unk, values:[]};
+
+  const A = Array.from({length:n}, () => Array(n).fill(0));
+  const b = Array(n).fill(0);
+  const x0 = NODES[layer.startNode].x;
+  const xR = NODES[layer.endNode].x;
+
+  // 动态建立方程（n可能<3，需按需添加）
+  // 物理方程：Σ unk_fy*(xu-xP) + Σ unk_m + Σ ext(Fy*(gx-xP) + M) = 0
+  // 代码约定：A_fy=(x0-xu), A_m=-1, b=-Σ ext(Fy*(x0-gx) - M)
+  let eq = 0;
+  // 有fx未知量时才加ΣFx=0方程
+  if(unk.some(u => u.comp==='fx')) {
+    unk.forEach((u,i) => { if(u.comp==='fx') A[eq][i] = 1; });
+    b[eq] = -ext.reduce((s,f) => s+f.Fx, 0);
+    eq++;
+  }
+  // ΣFy = 0
+  if(eq < n) {
+    unk.forEach((u,i) => { if(u.comp==='fy') A[eq][i] = 1; });
+    b[eq] = -ext.reduce((s,f) => s+f.Fy, 0);
+    eq++;
+  }
+  // ΣM_start = 0（对层起点取矩 CCW+）
+  if(eq < n) {
+    unk.forEach((u,i) => {
+      const xu = NODES[u.node].x;
+      if(u.comp==='fy') A[eq][i] = (x0 - xu);
+      if(u.comp==='m')  A[eq][i] = -1;
+    });
+    b[eq] = -ext.reduce((s,f) => s + f.Fy*(x0-f.gx) - f.M, 0);
+    eq++;
+  }
+  layer.nodes.forEach(nd => {
+    if(eq >= n) return;
+    if(hingeNodes[nd] && nd !== layer.startNode && nd !== layer.endNode) {
+      const xh = NODES[nd].x;
+      unk.forEach((u,i) => {
+        const xu = NODES[u.node].x;
+        if(xu < xh + 1e-9) {
+          if(u.comp==='fy') A[eq][i] = (xh - xu);
+          if(u.comp==='m')  A[eq][i] = -1;
+        }
+      });
+      b[eq] = -ext.filter(f => f.gx < xh + 1e-9).reduce((s,f) => s + f.Fy*(xh-f.gx) - f.M, 0);
+      eq++;
+    }
+  });
+  // 冗余方程（对层终点取矩）
+  for(; eq < n; eq++) {
+    unk.forEach((u,i) => {
+      const xu = NODES[u.node].x;
+      if(u.comp==='fy') A[eq][i] = (xR - xu);
+      if(u.comp==='m')  A[eq][i] = -1;
+    });
+    b[eq] = -ext.reduce((s,f) => s + f.Fy*(xR-f.gx) - f.M, 0);
+  }
+
+  const x = gaussSolve(A, b);
+  const values = unk.map((u,i) => isFinite(x[i]) ? x[i] : 0);
+
+  // 写入反力和铰传递力
+  unk.forEach((u,i) => {
+    const val = values[i];
+    if(u.isHinge) {
+      // 虚拟铰支座（无真实支座的端点铰）：铰传递力 = -支撑力（反作用力传给相邻基本层）
+      hingeTransfer[u.node] = -val;
+    } else {
+      if(u.comp==='fx') reactions[u.node].fx += val;
+      if(u.comp==='fy') reactions[u.node].fy += val;
+      if(u.comp==='m')  reactions[u.node].m  += val;
+      // 铰节点处有真实支座时：支座吸收剪力，不向相邻层传递力
+      // （即 hingeTransfer 不设置，相邻层在该铰节点处视为自由端）
+    }
+  });
+  return {ext, unk, values};
+}
+
+// 静定多跨梁分层求解
+function solveStaticallyDeterminate() {
+  const layers = identifyLayers();
+  const reactions = {};
+  NODE_IDS.forEach(id => { reactions[id] = {fx:0, fy:0, m:0}; });
+  const hingeTransfer = {}; // {nodeId: Fy} 铰传递力
+  const solveSteps = []; // 求解过程记录
+
+  // 求解顺序：先附属，后基本
+  const subordinate = layers.filter(l => !l.isBasic);
+  const basic = layers.filter(l => l.isBasic);
+  const order = [...subordinate, ...basic];
+
+  order.forEach(layer => {
+    const result = solveLayerEquilibrium(layer, reactions, hingeTransfer);
+    // 记录求解步骤
+    const stepInfo = {
+      layerId: layer.id,
+      type: layer.type,
+      range: `${layer.startNode}-${layer.endNode}`,
+      loads: result.ext.filter(e => e.src !== 'hinge-transfer'),
+      hingeForces: result.ext.filter(e => e.src === 'hinge-transfer'),
+      unknowns: result.unk.map((u,i) => ({
+        node: u.node, comp: u.comp, isHinge: u.isHinge||false,
+        value: result.values[i]
+      })),
+      reactions: {}
+    };
+    layer.nodes.forEach(n => {
+      if(SUPPORT_TYPES[n] && SUPPORT_TYPES[n] !== 'none') {
+        stepInfo.reactions[n] = {...reactions[n]};
+      }
+    });
+    solveSteps.push(stepInfo);
+  });
+
+  const memberForces = computeInternalForcesBySection(reactions);
+  return {
+    U: Array(DOF_TOTAL).fill(0), F_eq: null,
+    reactions, memberForces,
+    method: 'section',
+    layers, solveSteps, order
+  };
+}
+
+// 截面法：用全局坐标（最左端A→当前截面）计算隔离体平衡，得到N/V/M
+// 这样多段梁、中间支座、多跨之间的阶跃完全自动连续。
+function computeInternalForcesBySection(reactions) {
+  const results = {};
+  // 预计算所有"全局外力"：荷载 + 支座反力 + 支座反力偶
+  // 每项: {Fx,Fy,M(ccw+), gx, gxStrict_less_than_for_jump?}
+  // 对于集中类外力，阶跃发生在右侧 (x_force < x_sec 严格小于时计入v/n/m阶跃)
+  // 对于均布荷载积分时已自动处理
+  const globalForces = [];
+  NODE_IDS.forEach(id => {
+    const r = reactions[id];
+    const gx = NODES[id].x;
+    // 支座反力: 只要有值就添加
+    if(r.fx || r.fy) globalForces.push({kind:'concentrated-force', Fx:r.fx, Fy:r.fy, gx, label:'R_'+id});
+    if(r.m) globalForces.push({kind:'moment', M:r.m, gx, label:'M_'+id});
+  });
+  loads.forEach(ld => {
+    const mem = MEMBERS.find(m=>m.id===ld.member); if(!mem) return;
+    const gxA = NODES[mem.nodeA].x;
+    if(ld.type==='udl'){
+      const w = ld.value, gx1 = gxA + ld.pos1, gx2 = gxA + ld.pos2;
+      if(gx2>gx1) globalForces.push({kind:'udl', w, gx1, gx2, label:ld.member+' udl'});
+    } else if(ld.type==='point'){
+      const {Fx,Fy} = getGlobalForce(ld);
+      globalForces.push({kind:'concentrated-force', Fx, Fy, gx: gxA + ld.pos, label:ld.member+' P'});
+    } else if(ld.type==='moment'){
+      const m = ld.value * getMomentSign(ld);
+      globalForces.push({kind:'moment', M:m, gx: gxA + ld.pos, label:ld.member+' M'});
+    }
+  });
+
+  MEMBERS.forEach(mem => {
+    const L = mem.L, angle = mem.angle;
+    const c = Math.cos(angle), s = Math.sin(angle);
+    const gxA_mem = NODES[mem.nodeA].x; // 该梁段A端的全局x
+    const pts = 160;
+    const xs = [], Ms = [], Vs = [], Ns = [];
+    for(let i=0;i<=pts;i++){
+      const a = (i/pts) * L;        // 沿杆距A端的距离
+      const gxSec = gxA_mem + a;    // 截面全局x
+      xs.push(a);
+
+      // 阶跃规则：集中力/力偶默认仅当 gx < gxSec 时计入（阶跃发生在作用点右侧）
+      // 唯一例外：杆件首截面（a==0）时，端点（gx==gxSec）处的集中力/力偶也计入（即为该杆件左端外力）
+      const isEnd0 = a < 1e-9;
+      let sumFx = 0, sumFy = 0, sumM_ccw = 0;
+      globalForces.forEach(f => {
+        if(f.kind==='concentrated-force') {
+          const sameSpot = Math.abs(f.gx - gxSec) < 1e-9;
+          if(sameSpot) { if(!isEnd0) return; }
+          else if(f.gx > gxSec) return;
+          sumFx += f.Fx;
+          sumFy += f.Fy;
+          sumM_ccw += f.Fy * (gxSec - f.gx);
+        } else if(f.kind==='moment') {
+          const sameSpot = Math.abs(f.gx - gxSec) < 1e-9;
+          if(sameSpot) { if(!isEnd0) return; }
+          else if(f.gx > gxSec) return;
+          // 集中力偶(CCW+)使左侧产生逆时针转趋势→上侧受拉(负弯矩)，故取负号
+          sumM_ccw -= f.M;
+        } else if(f.kind==='udl') {
+          if(gxSec <= f.gx1) return;
+          const gxEffEnd = Math.min(gxSec, f.gx2);
+          const lenEff = gxEffEnd - f.gx1;
+          if(lenEff <= 0) return;
+          const Fy = -f.w * lenEff; // 向下，所以负
+          const gxForce = f.gx1 + lenEff/2;
+          sumFy += Fy;
+          sumM_ccw += Fy * (gxSec - gxForce);
+        }
+      });
+      // 局部N/V 投影
+      const N_proj = c*sumFx + s*sumFy;
+      const V_proj = s*sumFx - c*sumFy;
+      const N = -N_proj;
+      const V = -V_proj;
+      // 弯矩：sumM_ccw = 所有外力对截面形心的 ccw+ 力矩之和。
+      // 简支UDL跨中验证：R_A=30↑Fy*(3-0) = 90 ccw+? 实际画图：左端向上的力会让梁"左端向上、右端不动"，变形为下凸（下侧受拉=正弯矩）。
+      //   叉乘方向：Fy↑×位置向量向右 = 方向指向纸内(CW)，对应顺时针弯矩 → 正弯矩下侧受拉。
+      //   所以"外力使梁产生下侧受拉的弯矩"对应 sumM_ccw 中的正号项实际为顺时针弯矩。
+      // 其实真正的正弯矩（下侧受拉） = Σ外力顺时针力矩 = -Σ外力CCW力矩？
+      // 验证UDL简支x=3：R_Ay*(gxSec-gx) = 30*3 = 90，加上UDL前3m合力Fy=-30作用于gx=1.5 → Fy*(3-1.5) = -45。
+      //   sumM_ccw = 45。而正弯矩应为 +45 → 所以 M = +sumM_ccw ✓（正好匹配直觉，ccw公式的叉乘结果就是正弯矩方向）
+      const M = sumM_ccw;
+      Ns.push(N); Vs.push(V); Ms.push(M);
+    }
+    const last = Ms.length - 1;
+    results[mem.id]={M:Ms,V:Vs,N:Ns,x:xs,L,angle,
+      start:{N:Ns[0],V:Vs[0],M:Ms[0]},
+      end:  {N:Ns[last],V:Vs[last],M:Ms[last]}};
+  });
+  return results;
+}
+
+// ==================== 主求解函数 ====================
+let loads = [];
+let solved = false;
+let solution = null;
+
+function solveStructure() {
+  // 统一采用静定多跨梁分层求解：先附属后基本，平衡方程求反力，截面法求内力
+  return solveStaticallyDeterminate();
+}
+
+function solveAndRender() {
+  try {
+    solution = solveStructure();
+    solved = true;
+    updateCheckResults();
+    updateMemberResults();
+    render();
+    updateStatus(`求解完成（静定多跨梁·分层求解+截面法）· M/V/N图已绘制`);
+  } catch(e) {
+    console.error(e);
+    updateStatus('求解失败: ' + e.message, true);
+  }
+}
+function clearResults() {
+  solved = false;
+  solution = null;
+  document.getElementById('check-results').innerHTML = '';
+  document.getElementById('member-results').innerHTML = '';
+  render();
+  updateStatus('已清空结果 · 点击「求解」重新计算');
+}
+
+// ==================== 校核与结果展示 ====================
+function updateCheckResults(){
+  if(!solution) return;
+  const mf = solution.memberForces;
+  const ck = document.getElementById('check-results');
+  let html = '';
+
+  // ===== 附属/基本结构拆分与求解过程展示 =====
+  if(solution.layers && solution.solveSteps) {
+    html += `<div class="result-block" style="border-color:#a371f766;">`;
+    html += `<div class="rb-title">附属/基本结构拆分与求解过程</div>`;
+    html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.8;">`;
+    html += `<span style="color:#8b949e;">结构拆分（按铰节点分段）：</span><br>`;
+    solution.layers.forEach(l => {
+      const color = l.isBasic ? '#3fb950' : '#f0883e';
+      const supports = l.vertSupports.length;
+      html += `　${l.id} [${l.startNode}→${l.endNode}] `
+            + `<span style="color:${color};font-weight:600;">${l.type}</span>`
+            + ` (${supports}个竖向支座)<br>`;
+    });
+    html += `<br><span style="color:#8b949e;">求解顺序（先附属后基本）：</span><br>`;
+    solution.solveSteps.forEach((step, si) => {
+      const color = step.type === '基本结构' ? '#3fb950' : '#f0883e';
+      html += `<br><span style="color:${color};font-weight:600;">第${si+1}步: ${step.type} ${step.range}</span><br>`;
+      // 外荷载
+      if(step.loads.length > 0) {
+        html += `　外荷载: `;
+        step.loads.forEach(f => {
+          if(Math.abs(f.Fy) > 0.01) html += `Fy=${f.Fy.toFixed(2)}@x=${f.gx.toFixed(1)} `;
+          if(Math.abs(f.M) > 0.01) html += `M=${f.M.toFixed(2)}@x=${f.gx.toFixed(1)} `;
+        });
+        html += '<br>';
+      }
+      // 铰传递力（已知外力）
+      if(step.hingeForces.length > 0) {
+        html += `　铰传递力(已知): `;
+        step.hingeForces.forEach(f => {
+          html += `Fy=${f.Fy.toFixed(2)}@${f.gx.toFixed(1)} `;
+        });
+        html += '<br>';
+      }
+      // 求解结果
+      html += `　求解结果: `;
+      step.unknowns.forEach(u => {
+        const label = u.isHinge ? `${u.node}铰传递力` :
+                      u.comp === 'fx' ? `${u.node}支座Fx` :
+                      u.comp === 'fy' ? `${u.node}支座Fy` : `${u.node}支座M`;
+        if(Math.abs(u.value) > 0.001)
+          html += `${label}=${u.value.toFixed(2)} `;
+      });
+      html += '<br>';
+    });
+    html += `</div></div>`;
+  }
+
+  // 整体平衡校核
+  let extFx=0, extFy=0, extM=0;
+  loads.forEach(ld => {
+    const mem = MEMBERS.find(m=>m.id===ld.member); if(!mem) return;
+    const na=NODES[mem.nodeA];
+    if(ld.type==='udl'){
+      const w=ld.value, Lspan=ld.pos2-ld.pos1;
+      const midPos=(ld.pos1+ld.pos2)/2, t=midPos/mem.L;
+      const gx=na.x+t*(NODES[mem.nodeB].x-na.x);
+      const gy=na.y+t*(NODES[mem.nodeB].y-na.y);
+      extFy += -w*Lspan;
+      extM += gx*(-w*Lspan) - gy*0;
+    } else if(ld.type==='point'){
+      const t=ld.pos/mem.L;
+      const gx=na.x+t*(NODES[mem.nodeB].x-na.x);
+      const gy=na.y+t*(NODES[mem.nodeB].y-na.y);
+      const {Fx,Fy}=getGlobalForce(ld);
+      extFx += Fx; extFy += Fy;
+      extM += gx*Fy - gy*Fx;
+    } else if(ld.type==='moment'){
+      extM += ld.value*getMomentSign(ld);
+    }
+  });
+  let rFx=0, rFy=0, rM=0;
+  NODE_IDS.forEach(id => {
+    const r=solution.reactions[id], n=NODES[id];
+    rFx += r.fx; rFy += r.fy; rM += r.m;
+    rM += n.x*r.fy - n.y*r.fx;
+  });
+  const sumFx = rFx + extFx;
+  const sumFy = rFy + extFy;
+  const sumMO = rM + extM;
+  const eqFx = Math.abs(sumFx) < 0.1;
+  const eqFy = Math.abs(sumFy) < 0.1;
+  const eqMO = Math.abs(sumMO) < 0.5;
+  const allEq = eqFx && eqFy && eqMO;
+
+  const eColor = allEq ? '#3fb950' : '#f85149';
+  html += `<div class="result-block" style="border-color:${eColor}66;">`;
+  html += `<div class="rb-title">整体平衡校核 (支座反力验证)</div>`;
+  html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.7;">`;
+  html += `<span style="color:${eqFx?'#3fb950':'#f85149'};">ΣFx = ${sumFx.toFixed(2)} ${eqFx?'✓':'✗'}</span><br>`;
+  html += `<span style="color:${eqFy?'#3fb950':'#f85149'};">ΣFy = ${sumFy.toFixed(2)} ${eqFy?'✓':'✗'}</span><br>`;
+  html += `<span style="color:${eqMO?'#3fb950':'#f85149'};">ΣM_O = ${sumMO.toFixed(2)} ${eqMO?'✓':'✗'}</span><br>`;
+  html += `<span style="color:${eColor};font-weight:700;">整体平衡 ${allEq?'✓ 满足':'✗ 不满足'}</span>`;
+  html += `</div></div>`;
+
+  // 铰节点弯矩为零校核
+  let hIdx = 0;
+  for(const nodeId in hingeNodes) {
+    if(!hingeNodes[nodeId]) continue;
+    const hingedMembers = MEMBERS.filter(m => m.nodeA === nodeId || m.nodeB === nodeId);
+    const ms = hingedMembers.map(m => m.nodeA === nodeId ? mf[m.id].start.M : mf[m.id].end.M);
+    const maxAbs = Math.max(...ms.map(Math.abs));
+    const hOk = maxAbs < 0.05;
+    const hColor = hOk ? '#3fb950' : '#f85149';
+    html += `<div class="result-block" style="border-color:${hColor}66;">`;
+    html += `<div class="rb-title">${nodeId}点铰节点弯矩校核</div>`;
+    html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.8;">`;
+    hingedMembers.forEach((m, i) => {
+      html += `${m.id}(${nodeId}端) M = ${ms[i].toFixed(3)} kN·m<br>`;
+    });
+    html += `<span style="color:${hColor};font-weight:700;">铰节点弯矩 |M|max = ${maxAbs.toFixed(3)} ${hOk?'✓ ≈ 0':'✗ 不为零'}</span>`;
+    html += `</div></div>`;
+    hIdx++;
+  }
+
+  // 支座反力展示
+  html += `<div class="result-block" style="border-color:#58a6ff66;">`;
+  html += `<div class="rb-title">支座反力</div>`;
+  html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.8;">`;
+  NODE_IDS.forEach(id => {
+    const type = SUPPORT_TYPES[id];
+    if(!type || type === 'none') return;
+    const r = solution.reactions[id];
+    const labels = {fixed:'固定支座', pinned:'固定铰', roller:'可动铰', slider:'定向滑动'};
+    let line = `${id} (${labels[type]||type})`;
+    const parts = [];
+    if(type==='pinned' || type==='fixed' || type==='slider') {
+      if(Math.abs(r.fx) > 0.01) parts.push(`Fx=${r.fx.toFixed(2)}`);
+    }
+    if(type!=='slider' || true) {
+      if(Math.abs(r.fy) > 0.01 || type==='roller') parts.push(`Fy=${r.fy.toFixed(2)}`);
+    }
+    if(type==='fixed' || type==='slider') {
+      if(Math.abs(r.m) > 0.01) parts.push(`M=${r.m.toFixed(2)}`);
+    }
+    line += `: ${parts.length?parts.join(', '):'0'}`;
+    html += line + '<br>';
+  });
+  html += `</div></div>`;
+
+  ck.innerHTML = html;
+}
+
+function updateMemberResults() {
+  const mr = document.getElementById('member-results');
+  mr.innerHTML = '<div class="section-title">各梁段截面内力</div>';
+  MEMBERS.forEach(mem => {
+    const f = solution.memberForces[mem.id]; if(!f) return;
+    const mM = Math.max(...f.M.map(Math.abs));
+    const mV = Math.max(...f.V.map(Math.abs));
+    const mN = Math.max(...f.N.map(Math.abs));
+    const d = document.createElement('div');
+    d.className = 'member-result';
+    d.innerHTML = `
+      <div class="mr-hdr">
+        <span class="mr-name">${mem.id}段 (L=${mem.L.toFixed(1)}m)</span>
+      </div>
+      <div class="mr-row"><span>M_max:</span><span class="v">${mM.toFixed(2)} kN·m</span></div>
+      <div class="mr-row"><span>V_max:</span><span class="v">${mV.toFixed(2)} kN</span></div>
+      <div class="mr-row"><span>N_max:</span><span class="v">${mN.toFixed(2)} kN</span></div>
+      <div class="mr-row" style="margin-top:4px;color:#6e7681;font-size:10px;">
+        ①${mem.nodeA}端: M=${f.start.M.toFixed(1)}, V=${f.start.V.toFixed(1)}, N=${f.start.N.toFixed(1)}
+      </div>
+      <div class="mr-row" style="color:#6e7681;font-size:10px;">
+        ②${mem.nodeB}端: M=${f.end.M.toFixed(1)}, V=${f.end.V.toFixed(1)}, N=${f.end.N.toFixed(1)}
+      </div>`;
+    mr.appendChild(d);
+  });
+}
+
+// ==================== 绘图 ====================
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W=0, H=0, SCALE=60, ox=0, oy=0;
+let showM=true, showV=false, showN=false, showFrame=true, showCheck=false;
+
+function getBounds(){
+  let minX=Infinity,maxX=-Infinity;
+  NODE_IDS.forEach(id => { minX=Math.min(minX,NODES[id].x); maxX=Math.max(maxX,NODES[id].x); });
+  return {minX,maxX,w:maxX-minX};
+}
+function resize(){
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  canvas.width = rect.width*dpr; canvas.height = rect.height*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  W = rect.width; H = rect.height;
+  const b = getBounds();
+  const padL = 60, padR = 60, padT = 90, padB = 80;
+  const fw = Math.max(b.w, 1);
+  SCALE = Math.max(15, Math.min((W-padL-padR)/fw, 90));
+  const cx = (b.minX + b.maxX) / 2;
+  ox = padL + (W-padL-padR)/2 - cx*SCALE;
+  oy = padT + (H-padT-padB)*0.35;
+  render();
+}
+window.addEventListener('resize', resize);
+function toS(x,y){ return {x:ox + x*SCALE, y:oy - y*SCALE}; }
+function updateStatus(msg, isErr){
+  const s = document.getElementById('status');
+  s.innerHTML = isErr ? `<span style="color:#f85149;font-weight:600;">${msg}</span>` : msg;
+}
+
+function drawStructure(){
+  if(!showFrame) return;
+  const beamY = 0;
+  MEMBERS.forEach(mem => {
+    const na = NODES[mem.nodeA], nb = NODES[mem.nodeB];
+    const sa = toS(na.x, beamY), sb = toS(nb.x, beamY);
+    // 梁体
+    ctx.save();
+    const grd = ctx.createLinearGradient(0,sa.y-10,0,sa.y+10);
+    grd.addColorStop(0,'#30363d'); grd.addColorStop(0.5,'#484f58'); grd.addColorStop(1,'#30363d');
+    ctx.fillStyle = grd;
+    ctx.fillRect(sa.x, sa.y-9, sb.x-sa.x, 18);
+    ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1.5;
+    ctx.strokeRect(sa.x, sa.y-9, sb.x-sa.x, 18);
+    ctx.restore();
+  });
+  // 节点标签
+  ctx.font = 'bold 12px "Segoe UI"'; ctx.fillStyle = '#e6edf3'; ctx.textAlign = 'center';
+  NODE_IDS.forEach(id => {
+    const s = toS(NODES[id].x, 0);
+    ctx.fillText(id, s.x, s.y - 16);
+    // 节点小圆点
+    if(hingeNodes[id]) {
+      ctx.save();
+      ctx.strokeStyle = '#a371f7'; ctx.fillStyle = '#a371f7'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(s.x, s.y, 3.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(s.x, s.y, 7, 0, Math.PI*2); ctx.stroke();
+      ctx.font = 'bold 9px "Segoe UI"'; ctx.fillStyle = '#a371f7';
+      ctx.fillText('铰', s.x, s.y+20);
+      ctx.restore();
+    }
+  });
+}
+
+function drawSupport(x, type){
+  const s = toS(x, 0);
+  const by = s.y;
+  ctx.save();
+  ctx.strokeStyle = '#8b949e'; ctx.lineWidth = 1.5;
+  ctx.fillStyle = '#21262d';
+  if(type==='fixed'){
+    // 固定支座: 墙 + 阴影线
+    ctx.beginPath();
+    ctx.moveTo(s.x, by-22); ctx.lineTo(s.x+18, by-22);
+    ctx.lineTo(s.x+18, by+22); ctx.lineTo(s.x, by+22); ctx.closePath(); ctx.fill(); ctx.stroke();
+    for(let wy=-20; wy<=20; wy+=4){
+      ctx.beginPath(); ctx.moveTo(s.x+18, by+wy); ctx.lineTo(s.x+23, by+wy-3); ctx.stroke();
+    }
+  } else if(type==='pinned'){
+    ctx.beginPath();
+    ctx.moveTo(s.x, by+9); ctx.lineTo(s.x-10, by+25); ctx.lineTo(s.x+10, by+25); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s.x-14, by+25); ctx.lineTo(s.x+14, by+25); ctx.stroke();
+    for(let i=-10;i<=10;i+=4){ ctx.beginPath(); ctx.moveTo(s.x+i, by+25); ctx.lineTo(s.x+i-3, by+30); ctx.stroke(); }
+  } else if(type==='roller'){
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(s.x, by+9); ctx.lineTo(s.x, by+23); ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(s.x, by+9, 3, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(s.x, by+23, 3, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s.x-14, by+28); ctx.lineTo(s.x+14, by+28); ctx.stroke();
+    for(let i=-10;i<=10;i+=4){ ctx.beginPath(); ctx.moveTo(s.x+i, by+28); ctx.lineTo(s.x+i-3, by+33); ctx.stroke(); }
+  } else if(type==='slider'){
+    ctx.lineWidth = 2;
+    const barLen = 18, gap = 7;
+    ctx.beginPath(); ctx.moveTo(s.x, by-gap); ctx.lineTo(s.x+barLen, by-gap); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s.x, by+gap); ctx.lineTo(s.x+barLen, by+gap); ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(s.x, by-gap, 2.5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(s.x, by+gap, 2.5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s.x+barLen, by-22); ctx.lineTo(s.x+barLen, by+22); ctx.stroke();
+    for(let wy=-20; wy<=20; wy+=4){
+      ctx.beginPath(); ctx.moveTo(s.x+barLen, by+wy); ctx.lineTo(s.x+barLen+5, by+wy-3); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawLoads(){
+  MEMBERS.forEach(mem => {
+    const na = NODES[mem.nodeA], nb = NODES[mem.nodeB];
+    const by = 0;
+    loads.filter(l=>l.member===mem.id).forEach(ld => {
+      if(ld.type==='point'){
+        const t = ld.pos / mem.L;
+        const gx = na.x + t*(nb.x-na.x);
+        const s = toS(gx, by);
+        const {Fx,Fy} = getGlobalForce(ld);
+        ctx.save();
+        ctx.strokeStyle = '#f85149'; ctx.fillStyle = '#f85149'; ctx.lineWidth = 2;
+        ctx.shadowColor = '#f85149'; ctx.shadowBlur = 4;
+        if(Fy !== 0) {
+          const down = Fy < 0;
+          const from = s.y - (down?35:4), to = s.y - (down?8:32);
+          ctx.beginPath(); ctx.moveTo(s.x, from); ctx.lineTo(s.x, to); ctx.stroke();
+          const tipY = to + (down?-8:+8);
+          ctx.beginPath(); ctx.moveTo(s.x-5, to); ctx.lineTo(s.x, tipY); ctx.lineTo(s.x+5, to); ctx.closePath(); ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
+          ctx.fillText(`${ld.value}kN`, s.x, down ? s.y-40 : s.y+42);
+        } else if(Fx !== 0) {
+          const right = Fx > 0;
+          const from = s.x + (right?32:4), to = s.x + (right?6:30);
+          ctx.beginPath(); ctx.moveTo(from, s.y-22); ctx.lineTo(to, s.y-22); ctx.stroke();
+          const tipX = to + (right?8:-8);
+          ctx.beginPath(); ctx.moveTo(to, s.y-27); ctx.lineTo(tipX, s.y-22); ctx.lineTo(to, s.y-17); ctx.closePath(); ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
+          ctx.fillText(`${ld.value}kN`, s.x, s.y-35);
+        }
+        ctx.restore();
+      } else if(ld.type==='moment'){
+        const t = ld.pos / mem.L;
+        const gx = na.x + t*(nb.x-na.x);
+        const s = toS(gx, by);
+        ctx.save();
+        ctx.strokeStyle = '#a371f7'; ctx.fillStyle = '#a371f7'; ctx.lineWidth = 2;
+        ctx.shadowColor = '#a371f7'; ctx.shadowBlur = 4;
+        const cx = s.x, cy = s.y-22, r = 14;
+        const ccw = getMomentSign(ld) > 0;
+        if(ccw) {
+          ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI*0.2, Math.PI*1.8, false); ctx.stroke();
+          const ang = Math.PI*1.8;
+          const ax = cx + r*Math.cos(ang), ay = cy + r*Math.sin(ang);
+          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax+6, ay-4); ctx.lineTo(ax+3, ay+4); ctx.closePath(); ctx.fill();
+        } else {
+          ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI*0.8, Math.PI*-0.2, true); ctx.stroke();
+          const ang = Math.PI*-0.2;
+          const ax = cx + r*Math.cos(ang), ay = cy + r*Math.sin(ang);
+          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax-6, ay+4); ctx.lineTo(ax-3, ay-4); ctx.closePath(); ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+        ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#a371f7';
+        ctx.fillText(`${ld.value}kN·m`, s.x, s.y-44);
+        ctx.restore();
+      } else if(ld.type==='udl'){
+        const x1 = na.x + (ld.pos1/mem.L)*(nb.x-na.x);
+        const x2 = na.x + (ld.pos2/mem.L)*(nb.x-na.x);
+        const s1 = toS(x1, by), s2 = toS(x2, by);
+        ctx.save();
+        ctx.strokeStyle = '#ffd700'; ctx.fillStyle = '#ffd700'; ctx.lineWidth = 1.8;
+        ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 3;
+        const n = Math.max(3, Math.floor(Math.abs(s2.x-s1.x)/30));
+        for(let i=0;i<n;i++){
+          const tt = (i+0.5)/n;
+          const x = s1.x + (s2.x-s1.x)*tt;
+          ctx.beginPath(); ctx.moveTo(x, s1.y-30); ctx.lineTo(x, s1.y-10); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(x-4, s1.y-10); ctx.lineTo(x, s1.y-4); ctx.lineTo(x+4, s1.y-10); ctx.closePath(); ctx.fill();
+        }
+        ctx.setLineDash([3,3]); ctx.strokeStyle = 'rgba(255,215,0,0.4)';
+        ctx.beginPath(); ctx.moveTo(s1.x, s1.y-5); ctx.lineTo(s2.x, s1.y-5); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.shadowBlur = 0;
+        ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffd700';
+        ctx.fillText(`${ld.value}kN/m`, (s1.x+s2.x)/2, s1.y-38);
+        ctx.restore();
+      }
+    });
+  });
+  // 支座反力
+  if(solution && showCheck) {
+    NODE_IDS.forEach(id => {
+      const type = SUPPORT_TYPES[id]; if(!type || type==='none') return;
+      const r = solution.reactions[id];
+      const s = toS(NODES[id].x, 0);
+      ctx.save();
+      if(Math.abs(r.fx) > 0.01) {
+        const right = r.fx > 0;
+        ctx.strokeStyle = '#3fb950'; ctx.fillStyle = '#3fb950'; ctx.lineWidth = 2.5;
+        const from = s.x + (right?38:10), to = s.x + (right?10:38);
+        ctx.beginPath(); ctx.moveTo(from, s.y+45); ctx.lineTo(to, s.y+45); ctx.stroke();
+        const tipX = to + (right?8:-8);
+        ctx.beginPath(); ctx.moveTo(to, s.y+40); ctx.lineTo(tipX, s.y+45); ctx.lineTo(to, s.y+50); ctx.closePath(); ctx.fill();
+        ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'left';
+        ctx.fillStyle = '#3fb950';
+        ctx.fillText(`Fx=${Math.abs(r.fx).toFixed(2)}`, s.x+45, s.y+49);
+      }
+      if(Math.abs(r.fy) > 0.01) {
+        const up = r.fy > 0;
+        ctx.strokeStyle = '#58a6ff'; ctx.fillStyle = '#58a6ff'; ctx.lineWidth = 2.5;
+        const from = s.y + (up?62:34), to = s.y + (up?38:60);
+        ctx.beginPath(); ctx.moveTo(s.x, from); ctx.lineTo(s.x, to); ctx.stroke();
+        const tipY = to + (up?8:-8);
+        ctx.beginPath(); ctx.moveTo(s.x-5, to); ctx.lineTo(s.x, tipY); ctx.lineTo(s.x+5, to); ctx.closePath(); ctx.fill();
+        ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'left';
+        ctx.fillStyle = '#58a6ff';
+        ctx.fillText(`Fy=${Math.abs(r.fy).toFixed(2)}`, s.x+8, up? s.y+66 : s.y+70);
+      }
+      if(Math.abs(r.m) > 0.01) {
+        ctx.strokeStyle = '#f85149'; ctx.fillStyle = '#f85149'; ctx.lineWidth = 2;
+        const cx=s.x, cy=s.y+85, r=14;
+        const ccw = r.m > 0;
+        if(ccw) {
+          ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI*0.2, Math.PI*1.8, false); ctx.stroke();
+          const ang = Math.PI*1.8;
+          const ax=cx+r*Math.cos(ang), ay=cy+r*Math.sin(ang);
+          ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(ax+5,ay-3); ctx.lineTo(ax+2,ay+3); ctx.closePath(); ctx.fill();
+        } else {
+          ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI*0.8, Math.PI*-0.2, true); ctx.stroke();
+          const ang = Math.PI*-0.2;
+          const ax=cx+r*Math.cos(ang), ay=cy+r*Math.sin(ang);
+          ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(ax-5,ay+3); ctx.lineTo(ax-2,ay-3); ctx.closePath(); ctx.fill();
+        }
+        ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#f85149';
+        ctx.fillText(`M=${Math.abs(r.m).toFixed(2)}`, s.x, cy+26);
+      }
+      ctx.restore();
+    });
+  }
+}
+
+function drawDiagram(type, color) {
+  if(!solved || !solution) return;
+  const mf = solution.memberForces;
+  let maxVal = 0;
+  MEMBERS.forEach(mem => {
+    const f = mf[mem.id]; if(f && f[type]) {
+      const m = Math.max(...f[type].map(Math.abs)); if(m > maxVal) maxVal = m;
+    }
+  });
+  if(maxVal < 0.001) return;
+  const maxPx = Math.min(SCALE*0.7, 55);
+  const scale = maxPx / maxVal;
+  const sign = 1;
+  MEMBERS.forEach(mem => {
+    const f = mf[mem.id]; if(!f) return;
+    const na = NODES[mem.nodeA], nb = NODES[mem.nodeB];
+    const sa = toS(na.x, 0), sb = toS(nb.x, 0);
+    const angle = Math.atan2(sb.y - sa.y, sb.x - sa.x);
+    const nx = -Math.sin(angle), ny = Math.cos(angle);
+    const data = f[type]; if(!data) return;
+    const n = data.length;
+    ctx.save();
+    ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 2;
+    ctx.shadowColor = color; ctx.shadowBlur = 6; ctx.globalAlpha = 0.15;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){
+      const t = i/(n-1);
+      const bx = sa.x + (sb.x-sa.x)*t, by = sa.y + (sb.y-sa.y)*t;
+      const v = data[i]*scale*sign;
+      if(i===0) ctx.moveTo(bx, by);
+      ctx.lineTo(bx + nx*v, by + ny*v);
+    }
+    for(let i=n-1;i>=0;i--){ const t=i/(n-1); ctx.lineTo(sa.x+(sb.x-sa.x)*t, sa.y+(sb.y-sa.y)*t); }
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){
+      const t=i/(n-1);
+      const bx=sa.x+(sb.x-sa.x)*t, by=sa.y+(sb.y-sa.y)*t;
+      const v=data[i]*scale*sign;
+      const px=bx+nx*v, py=by+ny*v;
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+    const keyIdx = new Set([0, n-1]);
+    loads.filter(l=>l.member===mem.id).forEach(ld=>{
+      if(ld.type==='udl'){ keyIdx.add(Math.round(ld.pos1/mem.L*(n-1))); keyIdx.add(Math.round(ld.pos2/mem.L*(n-1))); }
+      else { keyIdx.add(Math.round(ld.pos/mem.L*(n-1))); }
+    });
+    let mi = 0, mv2 = Math.abs(data[0]);
+    for(let i=1;i<n;i++) if(Math.abs(data[i]) > mv2){ mv2 = Math.abs(data[i]); mi = i; }
+    keyIdx.add(mi);
+    ctx.shadowBlur = 0; ctx.font = 'bold 10px "Consolas",monospace'; ctx.textAlign = 'center';
+    [...keyIdx].sort((a,b)=>a-b).forEach(i => {
+      if(i<0 || i>=n) return;
+      const val = data[i];
+      if(Math.abs(val) < 0.1) return;
+      const t = i/(n-1);
+      const bx = sa.x+(sb.x-sa.x)*t, by=sa.y+(sb.y-sa.y)*t;
+      const v = val*scale*sign;
+      const px = bx+nx*v, py = by+ny*v;
+      const offDir = v >= 0 ? 1 : -1;
+      const lx = px + nx*14*offDir, ly = py + ny*14*offDir;
+      const txt = type === 'M' ? Math.abs(val).toFixed(1) : (val>=0?'+':'') + val.toFixed(1);
+      const tw = ctx.measureText(txt).width;
+      ctx.fillStyle = 'rgba(13,17,23,0.85)';
+      ctx.fillRect(lx-tw/2-3, ly-7, tw+6, 14);
+      ctx.fillStyle = color;
+      ctx.fillText(txt, lx, ly+3);
+    });
+    ctx.restore();
+  });
+}
+
+function drawReactionsCheck() {
+  if(!showCheck || !solved) return;
+  const mf = solution.memberForces;
+  // 铰节点校核圆圈
+  for(const nodeId in hingeNodes) {
+    if(!hingeNodes[nodeId]) continue;
+    const node = NODES[nodeId];
+    const s = toS(node.x, 0);
+    const hingedMembers = MEMBERS.filter(m => m.nodeA === nodeId || m.nodeB === nodeId);
+    const maxAbs = Math.max(...hingedMembers.map(m => {
+      const val = m.nodeA === nodeId ? mf[m.id].start.M : mf[m.id].end.M;
+      return Math.abs(val);
+    }));
+    const hOk = maxAbs < 0.05;
+    const color = hOk ? '#3fb950' : '#f85149';
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2;
+    ctx.shadowColor = color; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(s.x, s.y-60, 10, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    if(hOk){
+      ctx.beginPath();
+      ctx.moveTo(s.x-3, s.y-60); ctx.lineTo(s.x, s.y-57); ctx.lineTo(s.x+4, s.y-63); ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(s.x-3, s.y-63); ctx.lineTo(s.x+3, s.y-57);
+      ctx.moveTo(s.x+3, s.y-63); ctx.lineTo(s.x-3, s.y-57); ctx.stroke();
+    }
+    ctx.font = 'bold 10px "Consolas",monospace'; ctx.fillStyle = color; ctx.textAlign = 'center';
+    ctx.fillText(`${nodeId}铰 M≈0`, s.x, s.y-78);
+    ctx.restore();
+  }
+}
+
+function render() {
+  if(NODE_IDS.length === 0) { ctx.clearRect(0,0,W,H); return; }
+  ctx.clearRect(0, 0, W, H);
+  drawStructure();
+  // 支座
+  NODE_IDS.forEach(id => {
+    const type = SUPPORT_TYPES[id]; if(!type || type==='none') return;
+    drawSupport(NODES[id].x, type);
+  });
+  drawLoads();
+  if(showM) drawDiagram('M', '#ffd700');
+  if(showV) drawDiagram('V', '#58a6ff');
+  if(showN) drawDiagram('N', '#3fb950');
+  drawReactionsCheck();
+}
+
+// ==================== UI面板交互 ====================
+let currentTab = 'structure';
+function switchTab(name) {
+  currentTab = name;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  ['structure','load','result'].forEach(tn => {
+    const el = document.getElementById('tab-'+tn);
+    if(el) el.style.display = (tn === name) ? '' : 'none';
+  });
+  if(name === 'result' && solved) { updateCheckResults(); updateMemberResults(); }
+}
+
+function renderPanel() {
+  // 梁段长度
+  const ml = document.getElementById('member-lengths');
+  if(!ml) return;
+  ml.innerHTML = '';
+  MEMBERS.forEach((mem, i) => {
+    const row = document.createElement('div');
+    row.className = 'member-row';
+    row.innerHTML = `
+      <label>${mem.nodeA}→${mem.nodeB}</label>
+      <input type="number" step="0.1" min="0.1" value="${mem.L.toFixed(1)}" data-idx="${i}">
+      ${MEMBERS.length > 1 ? `<button class="del-btn" data-idx="${i}">×</button>` : ''}
+    `;
+    ml.appendChild(row);
+  });
+  ml.querySelectorAll('input').forEach(inp => {
+    inp.onchange = (e) => {
+      const i = +e.target.dataset.idx;
+      const newL = parseFloat(e.target.value);
+      if(newL > 0) {
+        // 暂存到 pendingLengths，不立即重建结构（避免破坏支座/铰设置）
+        pendingLengths[i] = newL;
+        updateStatus(`${MEMBERS[i].id} 段长度已暂存为 ${newL}m · 点击「应用结构设置」生效`);
+      }
+    };
+  });
+
+  // 支座设置
+  const sa = document.getElementById('supports-area');
+  sa.innerHTML = '';
+  NODE_IDS.forEach(id => {
+    const row = document.createElement('div');
+    row.className = 'support-row';
+    row.innerHTML = `
+      <span class="node-label">${id}</span>
+      <select data-node="${id}">
+        <option value="none">无</option>
+        <option value="fixed">固定支座</option>
+        <option value="pinned">固定铰支座</option>
+        <option value="roller">可动铰支座</option>
+        <option value="slider">定向滑动支座</option>
+      </select>
+    `;
+    const sel = row.querySelector('select');
+    sel.value = SUPPORT_TYPES[id] || 'none';
+    sel.onchange = (e) => {
+      updateStatus(`${id} 支座类型已暂存为 ${e.target.options[e.target.selectedIndex].text} · 点击「应用结构设置」生效`);
+    };
+    sa.appendChild(row);
+  });
+
+  // 铰节点设置
+  const ha = document.getElementById('hinges-area');
+  ha.innerHTML = `<div style="font-size:10.5px;color:#6e7681;margin-bottom:6px;">内部节点设置为铰（弯矩为0）</div>`;
+  NODE_IDS.forEach((id, idx) => {
+    if(idx === 0 || idx === NODE_IDS.length-1) return; // 跳过端点（外部节点）
+    const row = document.createElement('div');
+    row.className = 'support-row';
+    const checked = hingeNodes[id] ? 'checked' : '';
+    row.innerHTML = `
+      <span class="node-label" style="color:#a371f7;">${id}</span>
+      <label style="font-size:11px;color:#8b949e;display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" data-node="${id}" ${checked} style="accent-color:#a371f7;">
+        设为铰节点
+      </label>
+    `;
+    const cb = row.querySelector('input');
+    cb.onchange = () => {
+      hingeNodes[id] = cb.checked;
+      render();
+      updateStatus(`${id} ${cb.checked?'已设为铰节点':'恢复为刚接'} · 点击「应用结构设置」生效`);
+    };
+    ha.appendChild(row);
+  });
+
+  updateLoadsList();
+}
+
+// 暂存的梁段长度 (用户输入后未应用的结构修改)
+let pendingLengths = [];
+
+function addMember() {
+  // 立即添加一段（保留所有设置）
+  const lengths = pendingLengths.length ? pendingLengths.slice() : MEMBERS.map(m => m.L);
+  lengths.push(2);
+  buildFromLengths(lengths, {preserve:true});
+  pendingLengths = lengths.slice();
+  renderPanel(); render();
+  updateStatus('已添加新梁段 · 点击「应用结构设置」生效');
+}
+
+function removeLastMember() {
+  if(MEMBERS.length <= 1) { updateStatus('至少需要保留1个梁段'); return; }
+  const lengths = pendingLengths.length ? pendingLengths.slice() : MEMBERS.map(m => m.L);
+  lengths.pop();
+  buildFromLengths(lengths, {preserve:true});
+  pendingLengths = lengths.slice();
+  renderPanel(); render();
+  updateStatus('已删除末段 · 点击「应用结构设置」生效');
+}
+
+function applyStructure() {
+  // 1. 读取梁段长度输入框的值
+  const inputs = document.querySelectorAll('#member-lengths input');
+  const lengths = [];
+  inputs.forEach(inp => {
+    const v = parseFloat(inp.value);
+    lengths.push(v > 0 ? v : 1);
+  });
+  // 2. 读取支座下拉框的值
+  document.querySelectorAll('#supports-area select').forEach(sel => {
+    const node = sel.dataset.node;
+    SUPPORT_TYPES[node] = sel.value;
+  });
+  // 3. 读取铰节点复选框的值
+  document.querySelectorAll('#hinges-area input[type="checkbox"]').forEach(cb => {
+    const node = cb.dataset.node;
+    if(cb.checked) hingeNodes[node] = true;
+    else delete hingeNodes[node];
+  });
+  // 4. 重建结构（保留支座/铰/荷载）
+  buildFromLengths(lengths, {preserve:true});
+  pendingLengths = lengths.slice();
+  // 5. 修正荷载位置范围（防止超出新梁段长度）
+  loads.forEach(ld => {
+    const mem = MEMBERS.find(m => m.id === ld.member);
+    if(!mem) return;
+    if(ld.type === 'point' || ld.type === 'moment') {
+      ld.pos = Math.max(0, Math.min(mem.L, ld.pos));
+    } else if(ld.type === 'udl') {
+      ld.pos1 = Math.max(0, Math.min(mem.L, ld.pos1));
+      ld.pos2 = Math.max(0, Math.min(mem.L, ld.pos2));
+      if(ld.pos1 >= ld.pos2) { ld.pos1 = 0; ld.pos2 = mem.L; }
+    }
+  });
+  renderPanel(); render();
+  updateStatus('结构设置已应用 · 共 ' + MEMBERS.length + ' 段 · 点击「求解结构内力」计算');
+}
+
+// 荷载
+let loadIdCounter = 1;
+function addLoad(type) {
+  const defaultMember = MEMBERS[0]?.id;
+  if(!defaultMember) { alert('请先创建梁段'); return; }
+  const L = MEMBERS[0].L;
+  const ld = { id: loadIdCounter++, type, member: defaultMember, value: 10 };
+  if(type === 'point') {
+    ld.pos = L/2; ld.direction = 'down';
+  } else if(type === 'moment') {
+    ld.pos = L/2; ld.direction = 'ccw'; ld.value = 20;
+  } else if(type === 'udl') {
+    ld.pos1 = 0; ld.pos2 = L;
+  }
+  loads.push(ld);
+  updateLoadsList();
+  solved = false;
+  render();
+}
+function removeLoad(id) {
+  loads = loads.filter(l => l.id !== id);
+  updateLoadsList();
+  solved = false;
+  render();
+}
+function updateLoadsList() {
+  const ls = document.getElementById('loads-list');
+  if(!ls) return;
+  if(loads.length === 0) {
+    ls.innerHTML = '<div style="font-size:11px;color:#484f58;text-align:center;padding:12px 0;">暂无荷载，点击上方按钮添加</div>';
+    return;
+  }
+  ls.innerHTML = '';
+  loads.forEach(ld => {
+    const mem = MEMBERS.find(m => m.id === ld.member);
+    const L = mem?.L || 1;
+    const div = document.createElement('div');
+    div.className = 'load-item';
+    let html = `<div class="load-hdr"><span class="load-type">${loadTypeLabel(ld.type)}</span><button class="del-btn" data-id="${ld.id}">×</button></div>`;
+    html += `<label>作用梁段
+      <select data-field="member">${MEMBERS.map(m=>`<option value="${m.id}" ${m.id===ld.member?'selected':''}>${m.id}</option>`).join('')}</select>
+    </label>`;
+    html += `<label>大小 (${ld.type==='udl'?'kN/m':ld.type==='moment'?'kN·m':'kN'})
+      <input type="number" step="0.1" value="${ld.value}" data-field="value">
+    </label>`;
+    if(ld.type === 'point') {
+      html += `<label>位置 (0~${L.toFixed(1)}m)
+        <input type="number" step="0.1" min="0" max="${L}" value="${ld.pos}" data-field="pos">
+      </label>
+      <div class="load-row-2">
+        <div><label>方向
+          <select data-field="direction">
+            <option value="down" ${ld.direction==='down'?'selected':''}>↓ 向下</option>
+            <option value="up" ${ld.direction==='up'?'selected':''}>↑ 向上</option>
+            <option value="right" ${ld.direction==='right'?'selected':''}>→ 向右</option>
+            <option value="left" ${ld.direction==='left'?'selected':''}>← 向左</option>
+          </select>
+        </label></div>
+      </div>`;
+    } else if(ld.type === 'moment') {
+      html += `<label>位置 (0~${L.toFixed(1)}m)
+        <input type="number" step="0.1" min="0" max="${L}" value="${ld.pos}" data-field="pos">
+      </label>
+      <label>方向
+        <select data-field="direction">
+          <option value="ccw" ${ld.direction==='ccw'?'selected':''}>↺ 逆时针</option>
+          <option value="cw" ${ld.direction==='cw'?'selected':''}>↻ 顺时针</option>
+        </select>
+      </label>`;
+    } else if(ld.type === 'udl') {
+      html += `<div class="load-row-2">
+        <div><label>起点 (m)<input type="number" step="0.1" min="0" max="${L}" value="${ld.pos1}" data-field="pos1"></label></div>
+        <div><label>终点 (m)<input type="number" step="0.1" min="0" max="${L}" value="${ld.pos2}" data-field="pos2"></label></div>
+      </div>
+      <div style="margin-top:4px;font-size:10px;color:#6e7681;">均布荷载默认向下作用</div>`;
+    }
+    div.innerHTML = html;
+    div.querySelector('.del-btn').onclick = () => removeLoad(ld.id);
+    div.querySelectorAll('[data-field]').forEach(inp => {
+      const f = inp.dataset.field;
+      const handler = () => {
+        let v = inp.type === 'number' ? parseFloat(inp.value) : inp.value;
+        if(isNaN(v)) v = 0;
+        ld[f] = v;
+        // 修正范围
+        const m2 = MEMBERS.find(x=>x.id===ld.member);
+        const LL = m2?.L || L;
+        if(ld.type === 'point' || ld.type === 'moment') ld.pos = Math.max(0, Math.min(LL, ld.pos || 0));
+        if(ld.type === 'udl') {
+          ld.pos1 = Math.max(0, Math.min(LL, ld.pos1 || 0));
+          ld.pos2 = Math.max(0, Math.min(LL, ld.pos2 || 0));
+          if(ld.pos1 >= ld.pos2) { ld.pos1=0; ld.pos2=LL; }
+        }
+        solved = false;
+        updateLoadsList(); render();
+      };
+      inp.onchange = handler;
+      if(inp.tagName === 'SELECT') inp.onchange = handler;
+    });
+    ls.appendChild(div);
+  });
+}
+
+function loadTypeLabel(t) {
+  return t === 'point' ? '集中力' : t === 'moment' ? '集中力偶' : '均布荷载';
+}
+
+// ==================== 初始化 ====================
+loadExample(1);
+resize();
+</script>
+</body>
+</html>

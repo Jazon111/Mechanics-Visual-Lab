@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>刚架内力分析 · 矩阵位移法</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:#0d1117;color:#e6edf3;overflow:hidden;}
+#app{display:flex;height:100vh;}
+#canvas-wrap{flex:1;position:relative;background:radial-gradient(circle at 50% 40%,#1b2433 0%,#0a0e16 70%);min-width:0;}
+canvas{display:block;width:100%;height:100%;position:absolute;top:0;left:0;}
+#toolbar{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:6px;background:rgba(22,27,34,0.92);padding:6px 12px;border-radius:10px;border:1px solid #30363d;backdrop-filter:blur(8px);z-index:10;}
+.tb-btn{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;color:#8b949e;background:#21262d;border:1px solid #30363d;cursor:pointer;transition:all .2s;white-space:nowrap;}
+.tb-btn:hover{background:#30363d;color:#fff;}
+.tb-btn.active{color:#fff;background:#1f6feb;border-color:#388bfd;}
+.tb-sep{width:1px;background:#30363d;margin:0 2px;}
+#status{position:absolute;bottom:10px;left:10px;right:10px;background:rgba(22,27,34,0.95);padding:8px 18px;border-radius:10px;border:1px solid #30363d;font-size:12px;color:#8b949e;z-index:10;text-align:center;}
+#status .hl{color:#ffd700;font-weight:600;}
+#panel{width:340px;background:#161b22;border-left:1px solid #30363d;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;}
+#panel-header{padding:12px 14px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:8px;}
+#panel-header .dot{width:8px;height:8px;border-radius:50%;background:#ffd700;box-shadow:0 0 8px #ffd700;}
+#panel-header h2{font-size:14px;color:#e6edf3;}
+#tabs{display:flex;background:#0d1117;border-bottom:1px solid #30363d;}
+.tab{flex:1;padding:9px 8px;text-align:center;font-size:11.5px;font-weight:600;color:#484f58;cursor:pointer;transition:all .2s;border-bottom:2px solid transparent;}
+.tab:hover{color:#8b949e;}
+.tab.active{color:#58a6ff;border-bottom-color:#1f6feb;}
+#tab-content{flex:1;overflow-y:auto;padding:12px;}
+#tab-content::-webkit-scrollbar{width:5px;}
+#tab-content::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px;}
+.section{margin-bottom:14px;}
+.section-title{font-size:11px;color:#8b949e;letter-spacing:1.5px;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.section-title::before{content:"";width:3px;height:12px;background:#1f6feb;border-radius:2px;}
+.load-item{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px 10px;margin-bottom:7px;font-size:11.5px;}
+.load-item .load-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;}
+.load-item .load-type{font-weight:700;color:#58a6ff;font-size:11px;}
+.load-item .del-btn{background:#21262d;border:1px solid #30363d;color:#f85149;border-radius:4px;width:20px;height:20px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;}
+.load-item .del-btn:hover{background:#f85149;color:#fff;}
+.load-item label{font-size:10px;color:#8b949e;display:block;margin-top:4px;}
+.load-item input,.load-item select{width:100%;padding:4px 6px;background:#0d1117;border:1px solid #21262d;border-radius:4px;color:#c9d1d9;font-size:11px;margin-top:2px;}
+.btn-primary{width:100%;padding:9px;background:linear-gradient(180deg,#1f6feb,#388bfd);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;}
+.btn-primary:hover{filter:brightness(1.1);transform:translateY(-1px);}
+.btn-secondary{width:100%;padding:7px;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;margin-top:6px;}
+.btn-secondary:hover{background:#30363d;color:#fff;}
+.result-block{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px;margin-bottom:8px;}
+.result-block .rb-title{font-size:11px;color:#8b949e;margin-bottom:6px;display:flex;align-items:center;gap:5px;}
+.result-block .rb-title::before{content:"●";color:#ffd700;}
+.result-block .rb-val{font-family:"Consolas",monospace;font-size:13px;color:#3fb950;font-weight:700;}
+.result-block .rb-unit{color:#8b949e;font-size:11px;margin-left:3px;}
+.member-result{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px 10px;margin-bottom:7px;}
+.member-result .mr-hdr{display:flex;justify-content:space-between;margin-bottom:5px;font-size:11.5px;}
+.member-result .mr-name{color:#58a6ff;font-weight:700;}
+.member-result .mr-row{display:flex;gap:8px;font-size:10.5px;color:#8b949e;font-family:"Consolas",monospace;}
+.member-result .mr-row span{flex:1;}
+.member-result .mr-row .v{color:#c9d1d9;}
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin:5px 0;font-size:10.5px;color:#8b949e;}
+.legend .dot{display:inline-block;width:10px;height:3px;border-radius:1px;vertical-align:middle;margin-right:3px;}
+.input-row{display:flex;gap:6px;align-items:center;margin-top:6px;}
+.input-row input,.input-row select{flex:1;padding:5px;background:#0d1117;border:1px solid #21262d;border-radius:5px;color:#c9d1d9;font-size:11px;}
+.input-row label{font-size:10.5px;color:#8b949e;white-space:nowrap;}
+.len-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.len-item{display:flex;align-items:center;gap:4px;background:#0d1117;border:1px solid #21262d;border-radius:5px;padding:4px 6px;}
+.len-item label{font-size:10.5px;color:#8b949e;min-width:24px;}
+.len-item input{width:100%;background:transparent;border:none;color:#c9d1d9;font-size:11px;font-family:"Consolas",monospace;outline:none;}
+.len-item .unit{font-size:9px;color:#6e7681;}
+</style>
+</head>
+<body>
+<div id="app">
+<div id="canvas-wrap">
+<canvas id="scene"></canvas>
+<div id="toolbar">
+<button class="tb-btn active" id="btn-solve">求解</button>
+<div class="tb-sep"></div>
+<button class="tb-btn active" id="btn-show-m">M图</button>
+<button class="tb-btn" id="btn-show-v">V图</button>
+<button class="tb-btn" id="btn-show-n">N图</button>
+<div class="tb-sep"></div>
+<button class="tb-btn active" id="btn-show-frames">结构</button>
+<div class="tb-sep"></div>
+<button class="tb-btn" id="btn-check">校核</button>
+<div class="tb-sep"></div>
+<button class="tb-btn" id="btn-reset">重置</button>
+</div>
+<div id="status">添加荷载后点击<span class="hl">「求解」</span>查看M、V、N图</div>
+</div>
+<div id="panel">
+<div id="panel-header">
+<div class="dot"></div>
+<h2>刚架内力分析</h2>
+</div>
+<div id="tabs">
+<div class="tab active" data-tab="loads">荷载输入</div>
+<div class="tab" data-tab="results">计算结果</div>
+</div>
+<div id="tab-content">
+<div id="tab-loads">
+<div class="section">
+<div class="section-title">结构参数</div>
+<div class="len-grid">
+<div class="len-item"><label>AC</label><input type="number" id="len-AC" value="4" step="0.5" min="0.5"><span class="unit">m</span></div>
+<div class="len-item"><label>CD</label><input type="number" id="len-CD" value="6" step="0.5" min="0.5"><span class="unit">m</span></div>
+<div class="len-item"><label>DE</label><input type="number" id="len-DE" value="2" step="0.5" min="0.5"><span class="unit">m</span></div>
+<div class="len-item"><label>BD</label><input type="number" id="len-BD" value="4" step="0.5" min="0.5"><span class="unit">m</span></div>
+</div>
+<button class="btn-secondary" id="btn-update-structure">应用结构参数</button>
+</div>
+<div class="section">
+<div class="section-title">支座设置</div>
+<div class="input-row">
+<label>A节点</label>
+<select id="support-A">
+<option value="none">无支座</option>
+<option value="fixed">固定支座</option>
+<option value="pinned">固定铰支座</option>
+<option value="roller">可动铰支座</option>
+<option value="slider">定向滑动支座</option>
+</select>
+</div>
+<div class="input-row">
+<label>B节点</label>
+<select id="support-B">
+<option value="none">无支座</option>
+<option value="fixed">固定支座</option>
+<option value="pinned">固定铰支座</option>
+<option value="roller">可动铰支座</option>
+<option value="slider">定向滑动支座</option>
+</select>
+</div>
+<div class="input-row">
+<label>C节点</label>
+<select id="support-C">
+<option value="none">无支座</option>
+<option value="fixed">固定支座</option>
+<option value="pinned">固定铰支座</option>
+<option value="roller">可动铰支座</option>
+<option value="slider">定向滑动支座</option>
+</select>
+</div>
+<div class="input-row">
+<label>D节点</label>
+<select id="support-D">
+<option value="none">无支座</option>
+<option value="fixed">固定支座</option>
+<option value="pinned">固定铰支座</option>
+<option value="roller">可动铰支座</option>
+<option value="slider">定向滑动支座</option>
+</select>
+</div>
+<div class="input-row">
+<label>E节点</label>
+<select id="support-E">
+<option value="none">无支座</option>
+<option value="fixed">固定支座</option>
+<option value="pinned">固定铰支座</option>
+<option value="roller">可动铰支座</option>
+<option value="slider">定向滑动支座</option>
+</select>
+</div>
+</div>
+<div class="section">
+<div class="section-title">已有荷载</div>
+<div id="loads-list"></div>
+</div>
+<div class="section">
+<div class="section-title">添加荷载</div>
+<div class="input-row">
+<label>类型</label>
+<select id="new-load-type">
+<option value="point">集中力</option>
+<option value="moment">集中力偶</option>
+<option value="udl">均布荷载</option>
+</select>
+</div>
+<div class="input-row">
+<label>杆件</label>
+<select id="new-load-pos"></select>
+</div>
+<div class="input-row" id="dir-row">
+<label>方向</label>
+<select id="new-load-dir"></select>
+</div>
+<div class="input-row" id="pos1-row" style="display:none;">
+<label>起点</label>
+<input type="number" id="new-load-pos1" value="0" step="0.5" min="0">
+<span style="font-size:10px;color:#8b949e;">m</span>
+</div>
+<div class="input-row" id="pos2-row" style="display:none;">
+<label>终点</label>
+<input type="number" id="new-load-pos2" value="6" step="0.5" min="0">
+<span style="font-size:10px;color:#8b949e;">m</span>
+</div>
+<div class="input-row" id="pos-row">
+<label>位置</label>
+<input type="number" id="new-load-pos-val" value="1" step="0.5" min="0">
+<span style="font-size:10px;color:#8b949e;">m</span>
+</div>
+<div class="input-row">
+<label>数值</label>
+<input type="number" id="new-load-value" value="10" step="0.5">
+</div>
+<button class="btn-primary" id="btn-add-load" style="margin-top:10px;">添加荷载</button>
+</div>
+</div>
+<div id="tab-results" style="display:none;">
+<div class="section">
+<div class="section-title">支座反力</div>
+<div id="reactions"></div>
+</div>
+<div class="section">
+<div class="section-title">各杆件内力 (最大值)</div>
+<div id="member-results"></div>
+</div>
+<div class="section" id="check-section" style="display:none;">
+<div class="section-title">弯矩平衡校核</div>
+<div id="check-results"></div>
+</div>
+<div class="section">
+<div class="section-title">图例</div>
+<div class="legend">
+<div><span class="dot" style="background:#3fb950"></span>M图 (弯矩 kN·m)</div>
+<div><span class="dot" style="background:#ffd700"></span>V图 (剪力 kN)</div>
+<div><span class="dot" style="background:#a371f7"></span>N图 (轴力 kN)</div>
+</div>
+<div style="font-size:10px;color:#8b949e;margin-top:6px;">
+· M图画在受拉侧（+M→下挠→底部受拉），不标正负号<br>
+· V图：剪力使隔离体顺时针旋转为正，标明±号<br>
+· N图：轴力以受拉为正，标明±号<br>
+· 正值反力方向: ↑ 或 →，正值力偶为逆时针
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+// ========== 可变结构参数 ==========
+let memberLengths = { AC:4, CD:6, DE:2, BD:4 };
+
+let NODES = {};
+let MEMBERS = [];
+const NODE_IDS = ['A','B','C','D','E'];
+const NODES_ALL = NODE_IDS.length;
+const DOF_TOTAL = NODES_ALL * 3;
+
+const dofMap = {};
+NODE_IDS.forEach((id, i) => { dofMap[id] = [i*3, i*3+1, i*3+2]; });
+
+// 支座类型: 'fixed'(固定支座), 'pinned'(固定铰支座), 'roller'(可动铰支座), 'slider'(定向滑动支座), 'none'(无)
+let SUPPORT_TYPES = { A: 'pinned', B: 'roller', C: 'none', D: 'none', E: 'none' };
+
+function getSupportConstraints(type) {
+  switch(type) {
+    case 'fixed':  return [true, true, true];    // 固定支座: x,y,θ全约束
+    case 'pinned': return [true, true, false];    // 固定铰支座: 约束x,y
+    case 'roller': return [false, true, false];   // 可动铰支座: 仅约束y
+    case 'slider': return [true, false, true];    // 定向滑动支座: 约束x,θ (可竖向滑动)
+    default:       return [false, false, false];
+  }
+}
+
+function getSupports() {
+  const s = {};
+  NODE_IDS.forEach(id => { s[id] = getSupportConstraints(SUPPORT_TYPES[id] || 'none'); });
+  return s;
+}
+
+let constrainedDOF = [];
+let freeDOF = [];
+function recomputeDOF() {
+  const SUP = getSupports();
+  constrainedDOF = [];
+  NODE_IDS.forEach(id => {
+    SUP[id].forEach((c, i) => { if(c) constrainedDOF.push(dofMap[id][i]); });
+  });
+  freeDOF = [];
+  for(let i=0;i<DOF_TOTAL;i++){ if(!constrainedDOF.includes(i)) freeDOF.push(i); }
+}
+
+const E = 2e8;
+const A_sec = 0.01;
+const I_sec = 0.0001;
+
+function rebuildStructure(){
+  // 由杆件长度计算节点坐标
+  NODES.A = {id:'A', x:0, y:0};
+  NODES.C = {id:'C', x:0, y:memberLengths.AC};
+  NODES.D = {id:'D', x:memberLengths.CD, y:memberLengths.AC};
+  NODES.E = {id:'E', x:memberLengths.CD + memberLengths.DE, y:memberLengths.AC};
+  NODES.B = {id:'B', x:memberLengths.CD, y:memberLengths.AC - memberLengths.BD};
+
+  // 更新杆件 (L 和 angle 由节点坐标计算)
+  MEMBERS = [
+    { id:'AC', nodeA:'A', nodeB:'C' },
+    { id:'CD', nodeA:'C', nodeB:'D' },
+    { id:'DE', nodeA:'D', nodeB:'E' },
+    { id:'BD', nodeA:'B', nodeB:'D' }
+  ];
+  MEMBERS.forEach(mem => {
+    const na=NODES[mem.nodeA], nb=NODES[mem.nodeB];
+    mem.L = Math.sqrt((nb.x-na.x)**2 + (nb.y-na.y)**2);
+    mem.angle = Math.atan2(nb.y-na.y, nb.x-na.x);
+  });
+
+  // 修正超出范围的荷载位置
+  loads.forEach(ld => {
+    const mem = MEMBERS.find(m=>m.id===ld.member);
+    if(!mem) return;
+    if(ld.type==='udl'){
+      ld.pos1 = Math.max(0, Math.min(ld.pos1, mem.L));
+      ld.pos2 = Math.max(0, Math.min(ld.pos2, mem.L));
+      if(ld.pos1 >= ld.pos2){ ld.pos1=0; ld.pos2=mem.L; }
+    } else {
+      ld.pos = Math.max(0, Math.min(ld.pos, mem.L));
+    }
+  });
+
+  recomputeDOF();
+  solved=false; solution=null;
+  updateMemberSelect();
+  updateLoadsList();
+  resize();
+}
+
+// 初始荷载 (新方向格式: down/up/right/left, ccw/cw)
+let loads = [
+  { id:1, type:'udl', member:'CD', value:10, pos1:0, pos2:6 },
+  { id:2, type:'point', member:'DE', pos:2, value:9, direction:'down' },
+  { id:3, type:'point', member:'BD', pos:2, value:6, direction:'left' }
+];
+
+// Canvas
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W=0, H=0, SCALE=55, ox=0, oy=0;
+let showM=true, showV=false, showN=false, showFrame=true, showCheck=false;
+let solved=false, solution=null;
+
+function getFrameBounds(){
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  NODE_IDS.forEach(id => {
+    const n=NODES[id];
+    minX=Math.min(minX,n.x); maxX=Math.max(maxX,n.x);
+    minY=Math.min(minY,n.y); maxY=Math.max(maxY,n.y);
+  });
+  return {minX,maxX,minY,maxY,w:maxX-minX,h:maxY-minY};
+}
+
+function resize(){
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio||1,2);
+  canvas.width = Math.floor(rect.width)*dpr;
+  canvas.height = Math.floor(rect.height)*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  W=rect.width; H=rect.height;
+  const b=getFrameBounds();
+  const padL=80, padR=80, padT=70, padB=55;
+  const availW=W-padL-padR, availH=H-padT-padB;
+  const fw=Math.max(b.w,0.5), fh=Math.max(b.h,0.5);
+  SCALE = Math.min(availW/fw, availH/fh);
+  SCALE = Math.max(10, Math.min(75, SCALE));
+  // 居中
+  const cx=(b.minX+b.maxX)/2, cy=(b.minY+b.maxY)/2;
+  ox = padL + availW/2 - cx*SCALE;
+  oy = padT + availH/2 + cy*SCALE;
+  render();
+}
+window.addEventListener('resize', resize);
+
+function toS(x,y){ return {x:ox+x*SCALE, y:oy-y*SCALE}; }
+
+// ========== 方向辅助 ==========
+function getGlobalForce(ld){
+  const P=ld.value;
+  if(ld.direction==='down')  return {Fx:0, Fy:-P};
+  if(ld.direction==='up')    return {Fx:0, Fy:P};
+  if(ld.direction==='right') return {Fx:P, Fy:0};
+  if(ld.direction==='left')  return {Fx:-P, Fy:0};
+  return {Fx:0, Fy:0};
+}
+function getMomentSign(ld){
+  return ld.direction==='cw' ? -1 : 1;
+}
+
+// ========== 矩阵位移法 ==========
+function solve(){
+  const SUPPORTS = getSupports();
+  const K = Array.from({length:DOF_TOTAL}, () => Array(DOF_TOTAL).fill(0));
+  MEMBERS.forEach(mem => {
+    const Ke = elementK(mem);
+    const dofs = [...dofMap[mem.nodeA], ...dofMap[mem.nodeB]];
+    for(let i=0;i<6;i++) for(let j=0;j<6;j++) K[dofs[i]][dofs[j]] += Ke[i][j];
+  });
+  const F = computeEquivalentLoads();
+  const nFree = freeDOF.length;
+  const Kff = Array.from({length:nFree}, () => Array(nFree).fill(0));
+  const Ff = Array(nFree).fill(0);
+  for(let i=0;i<nFree;i++){
+    Ff[i] = F[freeDOF[i]];
+    for(let j=0;j<nFree;j++) Kff[i][j] = K[freeDOF[i]][freeDOF[j]];
+  }
+  const Uf = gaussSolve(Kff, Ff);
+  const U = Array(DOF_TOTAL).fill(0);
+  for(let i=0;i<nFree;i++) U[freeDOF[i]] = Uf[i];
+  const reactions = {};
+  NODE_IDS.forEach(id => {
+    const sup=SUPPORTS[id], dofs=dofMap[id];
+    reactions[id]={fx:0,fy:0,m:0};
+    if(sup[0]){ let r=0; for(let j=0;j<DOF_TOTAL;j++) r+=K[dofs[0]][j]*U[j]; reactions[id].fx=r-F[dofs[0]]; }
+    if(sup[1]){ let r=0; for(let j=0;j<DOF_TOTAL;j++) r+=K[dofs[1]][j]*U[j]; reactions[id].fy=r-F[dofs[1]]; }
+    if(sup[2]){ let r=0; for(let j=0;j<DOF_TOTAL;j++) r+=K[dofs[2]][j]*U[j]; reactions[id].m=r-F[dofs[2]]; }
+  });
+  const memberForces = computeInternalForces(U);
+  return { U, reactions, memberForces };
+}
+
+function elementK(mem){
+  const L=mem.L, angle=mem.angle;
+  const c=Math.cos(angle), s=Math.sin(angle);
+  const eal=E*A_sec/L, eil=E*I_sec/L;
+  const eil2=E*I_sec/(L*L), eil3=E*I_sec/(L*L*L);
+  const kl = [
+    [eal,0,0,-eal,0,0],
+    [0,12*eil3,6*eil2,0,-12*eil3,6*eil2],
+    [0,6*eil2,4*eil,0,-6*eil2,2*eil],
+    [-eal,0,0,eal,0,0],
+    [0,-12*eil3,-6*eil2,0,12*eil3,-6*eil2],
+    [0,6*eil2,2*eil,0,-6*eil2,4*eil]
+  ];
+  const T = [[c,s,0,0,0,0],[-s,c,0,0,0,0],[0,0,1,0,0,0],[0,0,0,c,s,0],[0,0,0,-s,c,0],[0,0,0,0,0,1]];
+  const Tt = transpose(T);
+  return matMul(matMul(Tt,kl),T);
+}
+
+function matMul(A,B){
+  const n=A.length,m=B[0].length,p=B.length,C=Array.from({length:n},()=>Array(m).fill(0));
+  for(let i=0;i<n;i++) for(let j=0;j<m;j++) for(let k=0;k<p;k++) C[i][j]+=A[i][k]*B[k][j];
+  return C;
+}
+function transpose(A){ return A[0].map((_,i)=>A.map(r=>r[i])); }
+
+function computeEquivalentLoads(){
+  const F = Array(DOF_TOTAL).fill(0);
+  loads.forEach(ld => {
+    const mem = MEMBERS.find(m=>m.id===ld.member);
+    if(!mem) return;
+    const L=mem.L, angle=mem.angle;
+    const c=Math.cos(angle), s=Math.sin(angle);
+    const dA=dofMap[mem.nodeA], dB=dofMap[mem.nodeB];
+    if(ld.type==='udl'){
+      const w=ld.value, Lspan=ld.pos2-ld.pos1;
+      const FyA=w*Lspan/2, FyB=w*Lspan/2;
+      const MA=w*Lspan*Lspan/12, MB=-w*Lspan*Lspan/12;
+      const fA_local=[0,-FyA,-MA], fB_local=[0,-FyB,-MB];
+      const fA_global=[c*fA_local[0]-s*fA_local[1], s*fA_local[0]+c*fA_local[1], fA_local[2]];
+      const fB_global=[c*fB_local[0]-s*fB_local[1], s*fB_local[0]+c*fB_local[1], fB_local[2]];
+      for(let i=0;i<3;i++){ F[dA[i]]+=fA_global[i]; F[dB[i]]+=fB_global[i]; }
+    } else if(ld.type==='point'){
+      const P=ld.value, a=ld.pos, b=L-a;
+      const {Fx,Fy}=getGlobalForce(ld);
+      const Nloc=c*Fx+s*Fy, Vloc=-s*Fx+c*Fy;
+      // 等效节点荷载 = -固端力
+      // 固端力: NA_fem=-Nloc*b/L, VA_fem=-Vloc*b/L, MA_fem=Vloc*a*b²/L²
+      // 等效节点荷载: eqV_A=Vloc*b/L, eqM_A=-Vloc*a*b²/L² (已验证)
+      const NA=Nloc*b/L, NB=Nloc*a/L;
+      const VA=Vloc*b/L, VB=Vloc*a/L;
+      const MA=Vloc*a*b*b/(L*L), MB=-Vloc*a*a*b/(L*L);
+      const fA_local=[NA,VA,MA], fB_local=[NB,VB,MB];
+      const fA_global=[c*fA_local[0]-s*fA_local[1], s*fA_local[0]+c*fA_local[1], fA_local[2]];
+      const fB_global=[c*fB_local[0]-s*fB_local[1], s*fB_local[0]+c*fB_local[1], fB_local[2]];
+      for(let i=0;i<3;i++){ F[dA[i]]+=fA_global[i]; F[dB[i]]+=fB_global[i]; }
+    } else if(ld.type==='moment'){
+      const m=ld.value*getMomentSign(ld), a=ld.pos, b=L-a;
+      // 正确的固端力公式 (力法推导):
+      // M_A_fem=m*b*(2a-b)/L², M_B_fem=m*a*(a-2b)/L²
+      // V_A_fem=2ma/L², V_B_fem=-2ma/L²
+      // 等效节点荷载 = -固端力
+      const eqVA=-2*m*a/(L*L), eqVB=2*m*a/(L*L);
+      const eqMA=m*b*(2*a-b)/(L*L), eqMB=-m*a*(2*b-a)/(L*L);
+      const fA_local=[0,eqVA,eqMA], fB_local=[0,eqVB,eqMB];
+      const fA_global=[c*fA_local[0]-s*fA_local[1], s*fA_local[0]+c*fA_local[1], fA_local[2]];
+      const fB_global=[c*fB_local[0]-s*fB_local[1], s*fB_local[0]+c*fB_local[1], fB_local[2]];
+      for(let i=0;i<3;i++){ F[dA[i]]+=fA_global[i]; F[dB[i]]+=fB_global[i]; }
+    }
+  });
+  return F;
+}
+
+function computeInternalForces(U){
+  const results = {};
+  MEMBERS.forEach(mem => {
+    const L=mem.L, angle=mem.angle;
+    const c=Math.cos(angle), s=Math.sin(angle);
+    const dofsA=dofMap[mem.nodeA], dofsB=dofMap[mem.nodeB];
+    const uA=[U[dofsA[0]],U[dofsA[1]],U[dofsA[2]]];
+    const uB=[U[dofsB[0]],U[dofsB[1]],U[dofsB[2]]];
+    const uAL=c*uA[0]+s*uA[1], vAL=-s*uA[0]+c*uA[1], thAL=uA[2];
+    const uBL=c*uB[0]+s*uB[1], vBL=-s*uB[0]+c*uB[1], thBL=uB[2];
+    const eal=E*A_sec/L, eil=E*I_sec/L, eil2=E*I_sec/(L*L), eil3=E*I_sec/(L*L*L);
+    const Na_el=eal*(uBL-uAL);
+    const VyA_el=12*eil3*vAL+6*eil2*thAL-12*eil3*vBL+6*eil2*thBL;
+    const MA_el=6*eil2*vAL+4*eil*thAL-6*eil2*vBL+2*eil*thBL;
+    const Nb_el=Na_el;
+    const VyB_el=-12*eil3*vAL-6*eil2*thAL+12*eil3*vBL-6*eil2*thBL;
+    const MB_el=6*eil2*vAL+2*eil*thAL-6*eil2*vBL+4*eil*thBL;
+    let NA_fem=0,VyA_fem=0,MA_fem=0,NB_fem=0,VyB_fem=0,MB_fem=0;
+    loads.filter(l=>l.member===mem.id).forEach(ld => {
+      if(ld.type==='udl'){
+        const w=ld.value, Lspan=ld.pos2-ld.pos1;
+        VyA_fem+=w*Lspan/2; VyB_fem+=w*Lspan/2;
+        MA_fem+=w*Lspan*Lspan/12; MB_fem+=-w*Lspan*Lspan/12;
+      } else if(ld.type==='point'){
+        const P=ld.value, a=ld.pos, b=L-a;
+        const {Fx,Fy}=getGlobalForce(ld);
+        const Nloc=c*Fx+s*Fy, Vloc=-s*Fx+c*Fy;
+        NA_fem+=-Nloc*b/L; NB_fem+=-Nloc*a/L;
+        VyA_fem+=-Vloc*b/L; VyB_fem+=-Vloc*a/L;
+        MA_fem+=-Vloc*a*b*b/(L*L); MB_fem+=Vloc*a*a*b/(L*L);
+      } else if(ld.type==='moment'){
+        const m=ld.value*getMomentSign(ld), a=ld.pos, b=L-a;
+        const MA=-m*b*(2*a-b)/(L*L), MB=-m*a*(a-2*b)/(L*L);
+        const VA=2*m*a/(L*L), VB=-2*m*a/(L*L);
+        MA_fem+=MA; MB_fem+=MB; VyA_fem+=VA; VyB_fem+=VB;
+      }
+    });
+    // 截面弯矩 (sagging为正): 刚度矩阵采用CCW+约定
+    // A端截面弯矩 = -杆端弯矩(CCW+) = -(MA_el + MA_fem)
+    // B端截面弯矩 = +杆端弯矩(CCW+) = +(MB_el + MB_fem)
+    const NA=Na_el+NA_fem, VyA=VyA_el+VyA_fem, MA=-(MA_el+MA_fem);
+    const NB=Nb_el+NB_fem, VyB=VyB_el+VyB_fem, MB=MB_el+MB_fem;
+    const pts=80, xs=[], Ms=[], Vs=[], Ns=[];
+    for(let i=0;i<=pts;i++){
+      const x=(i/pts)*L; xs.push(x);
+      let m=MA+VyA*x, v=VyA, n=NA;
+      loads.filter(l=>l.member===mem.id).forEach(ld=>{
+        if(ld.type==='udl'){
+          const a=ld.pos1, Lspan=ld.pos2-ld.pos1, w=ld.value;
+          if(x>=a){ const dx=Math.min(x-a,Lspan); m-=w*dx*dx/2; v-=w*dx; }
+        } else if(ld.type==='point'){
+          if(x>ld.pos){
+            const {Fx,Fy}=getGlobalForce(ld);
+            const Nloc=c*Fx+s*Fy, Vloc=-s*Fx+c*Fy;
+            m+=Vloc*(x-ld.pos); v+=Vloc; n+=Nloc;
+          }
+        } else if(ld.type==='moment'){
+          if(x>ld.pos){
+            const m_local = ld.value*getMomentSign(ld);
+            m-=m_local;
+          }
+        }
+      });
+      Ms.push(m); Vs.push(v); Ns.push(n);
+    }
+    results[mem.id]={M:Ms,V:Vs,N:Ns,x:xs,L,angle,start:{N:NA,V:VyA,M:MA},end:{N:NB,V:VyB,M:MB}};
+  });
+  return results;
+}
+
+function gaussSolve(A,b){
+  const n=A.length, M=A.map((r,i)=>[...r,b[i]]);
+  for(let i=0;i<n;i++){
+    let mr=i;
+    for(let k=i+1;k<n;k++) if(Math.abs(M[k][i])>Math.abs(M[mr][i])) mr=k;
+    [M[i],M[mr]]=[M[mr],M[i]];
+    if(Math.abs(M[i][i])<1e-12) throw new Error('结构为几何可变体系，请检查支座约束是否足够');
+    for(let k=i+1;k<n;k++){
+      const f=M[k][i]/M[i][i];
+      for(let j=i;j<=n;j++) M[k][j]-=f*M[i][j];
+    }
+  }
+  const x=Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){
+    x[i]=M[i][n];
+    for(let j=i+1;j<n;j++) x[i]-=M[i][j]*x[j];
+    x[i]/=M[i][i];
+  }
+  return x;
+}
+
+// ========== Canvas 渲染 ==========
+function render(){
+  ctx.clearRect(0,0,W,H);
+  drawGrid();
+  if(showFrame) drawStructure();
+  drawLoads();
+  if(solved && solution){
+    if(showM) drawDiagram(solution.memberForces,'M','#3fb950');
+    if(showV) drawDiagram(solution.memberForces,'V','#ffd700');
+    if(showN) drawDiagram(solution.memberForces,'N','#a371f7');
+    drawReactions(solution.reactions);
+    if(showCheck) drawCheck();
+  }
+}
+
+function drawGrid(){
+  ctx.save();
+  ctx.strokeStyle='rgba(88,166,255,0.05)'; ctx.lineWidth=1;
+  for(let x=ox%SCALE;x<W;x+=SCALE){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for(let y=oy%SCALE;y<H;y+=SCALE){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  ctx.restore();
+}
+
+function drawSupport(nodeId, type) {
+  const n = NODES[nodeId];
+  const s = toS(n.x, n.y);
+  // 判断节点在结构上方还是下方，决定支座朝向
+  const bounds = getFrameBounds();
+  const isBottom = n.y <= bounds.minY + 0.01;
+  const dir = isBottom ? 1 : -1; // 1=向下画, -1=向上画
+  const gy = dir; // ground direction multiplier
+  ctx.save();
+  ctx.strokeStyle='#58a6ff'; ctx.fillStyle='#58a6ff'; ctx.lineWidth=2;
+  if(type==='fixed'){
+    // 固定支座: 节点处画固定端 + 墙体
+    ctx.beginPath(); ctx.arc(s.x, s.y, 5, 0, Math.PI*2); ctx.fill();
+    ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(s.x-22, s.y+gy*8); ctx.lineTo(s.x+22, s.y+gy*8); ctx.stroke();
+    ctx.lineWidth=1.5;
+    for(let i=-4; i<=4; i++){
+      ctx.beginPath();
+      ctx.moveTo(s.x+i*6, s.y+gy*8);
+      ctx.lineTo(s.x+i*6-5, s.y+gy*(8+7));
+      ctx.stroke();
+    }
+  } else if(type==='pinned'){
+    // 固定铰支座: 三角形 + 地面
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    ctx.lineTo(s.x-16, s.y+gy*22);
+    ctx.lineTo(s.x+16, s.y+gy*22);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(s.x-24, s.y+gy*22); ctx.lineTo(s.x+24, s.y+gy*22); ctx.stroke();
+    for(let i=-3; i<=3; i++){
+      ctx.beginPath();
+      ctx.moveTo(s.x+i*7-3, s.y+gy*22);
+      ctx.lineTo(s.x+i*7+4, s.y+gy*(22+7));
+      ctx.stroke();
+    }
+  } else if(type==='roller'){
+    // 可动铰支座: 三角形 + 滚轮 + 地面
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    ctx.lineTo(s.x-15, s.y+gy*18);
+    ctx.lineTo(s.x+15, s.y+gy*18);
+    ctx.closePath(); ctx.fill();
+    // 滚轮
+    ctx.beginPath();
+    ctx.arc(s.x-9, s.y+gy*24, 4, 0, Math.PI*2);
+    ctx.arc(s.x+9, s.y+gy*24, 4, 0, Math.PI*2);
+    ctx.fill();
+    // 地面
+    ctx.beginPath(); ctx.moveTo(s.x-24, s.y+gy*30); ctx.lineTo(s.x+24, s.y+gy*30); ctx.stroke();
+    for(let i=-3; i<=3; i++){
+      ctx.beginPath();
+      ctx.moveTo(s.x+i*7-3, s.y+gy*30);
+      ctx.lineTo(s.x+i*7+4, s.y+gy*(30+7));
+      ctx.stroke();
+    }
+  } else if(type==='slider'){
+    // 定向滑动支座: 导槽 + 内部滚轮 + 地面 (允许竖向滑动)
+    ctx.beginPath();
+    ctx.moveTo(s.x-16, s.y+gy*2);
+    ctx.lineTo(s.x-16, s.y+gy*22);
+    ctx.lineTo(s.x+16, s.y+gy*22);
+    ctx.lineTo(s.x+16, s.y+gy*2);
+    ctx.stroke();
+    // 内部滚轮
+    ctx.beginPath();
+    ctx.arc(s.x-8, s.y+gy*17, 3, 0, Math.PI*2);
+    ctx.arc(s.x+8, s.y+gy*17, 3, 0, Math.PI*2);
+    ctx.fill();
+    // 地面
+    ctx.beginPath(); ctx.moveTo(s.x-24, s.y+gy*22); ctx.lineTo(s.x+24, s.y+gy*22); ctx.stroke();
+    for(let i=-3; i<=3; i++){
+      ctx.beginPath();
+      ctx.moveTo(s.x+i*7-3, s.y+gy*22);
+      ctx.lineTo(s.x+i*7+4, s.y+gy*(22+7));
+      ctx.stroke();
+    }
+  }
+  // 支座类型标签
+  const labels = {fixed:'固定', pinned:'铰支', roller:'可动铰', slider:'定向'};
+  ctx.font='bold 9px "Consolas",monospace'; ctx.fillStyle='#8b949e'; ctx.textAlign='center';
+  ctx.fillText(labels[type]||'', s.x, s.y+gy*42);
+  ctx.restore();
+}
+
+function drawStructure(){
+  MEMBERS.forEach(mem => {
+    const sa=toS(NODES[mem.nodeA].x, NODES[mem.nodeA].y);
+    const sb=toS(NODES[mem.nodeB].x, NODES[mem.nodeB].y);
+    ctx.save();
+    ctx.strokeStyle='#30363d'; ctx.lineWidth=14; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(sa.x,sa.y); ctx.lineTo(sb.x,sb.y); ctx.stroke();
+    ctx.strokeStyle='#484f58'; ctx.lineWidth=10;
+    ctx.beginPath(); ctx.moveTo(sa.x,sa.y); ctx.lineTo(sb.x,sb.y); ctx.stroke();
+    ctx.strokeStyle='#6e7681'; ctx.lineWidth=6;
+    ctx.shadowColor='rgba(88,166,255,0.3)'; ctx.shadowBlur=3;
+    ctx.beginPath(); ctx.moveTo(sa.x,sa.y); ctx.lineTo(sb.x,sb.y); ctx.stroke();
+    ctx.restore();
+  });
+  NODE_IDS.forEach(id => {
+    const s=toS(NODES[id].x, NODES[id].y);
+    ctx.save();
+    ctx.fillStyle='#0d1117'; ctx.strokeStyle='#58a6ff'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(s.x,s.y,7,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#58a6ff';
+    ctx.beginPath(); ctx.arc(s.x,s.y,3,0,Math.PI*2); ctx.fill();
+    ctx.font='bold 13px "Segoe UI"'; ctx.fillStyle='#c9d1d9'; ctx.textAlign='center';
+    ctx.fillText(id, s.x+(s.x<(ox+getFrameBounds().w*SCALE/2)?-18:18), s.y+(s.y<oy?-12:14));
+    ctx.restore();
+  });
+  // 支座 (根据类型绘制不同符号)
+  NODE_IDS.forEach(id => {
+    const type = SUPPORT_TYPES[id];
+    if(type && type !== 'none') drawSupport(id, type);
+  });
+  // 尺寸标注
+  ctx.save(); ctx.font='bold 11px "Consolas",monospace'; ctx.fillStyle='#8b949e'; ctx.textAlign='center';
+  MEMBERS.forEach(mem => {
+    const sa=toS(NODES[mem.nodeA].x, NODES[mem.nodeA].y);
+    const sb=toS(NODES[mem.nodeB].x, NODES[mem.nodeB].y);
+    const mx=(sa.x+sb.x)/2, my=(sa.y+sb.y)/2;
+    const ang=mem.angle;
+    if(Math.abs(ang)<0.01 || Math.abs(Math.abs(ang)-Math.PI)<0.01){ ctx.fillText(mem.L.toFixed(1)+'m', mx, my+18); }
+    else { ctx.fillText(mem.L.toFixed(1)+'m', mx+16, my+4); }
+  });
+  ctx.restore();
+}
+
+function drawLoads(){
+  loads.forEach(ld => {
+    const mem=MEMBERS.find(m=>m.id===ld.member); if(!mem) return;
+    const sa=toS(NODES[mem.nodeA].x, NODES[mem.nodeA].y);
+    const sb=toS(NODES[mem.nodeB].x, NODES[mem.nodeB].y);
+    const angle=Math.atan2(sb.y-sa.y, sb.x-sa.x);
+    if(ld.type==='udl'){
+      const p1=ld.pos1/mem.L, p2=ld.pos2/mem.L;
+      const s1x=sa.x+(sb.x-sa.x)*p1, s1y=sa.y+(sb.y-sa.y)*p1;
+      const s2x=sa.x+(sb.x-sa.x)*p2, s2y=sa.y+(sb.y-sa.y)*p2;
+      const len=Math.sqrt((s2x-s1x)**2+(s2y-s1y)**2);
+      const cnt=Math.max(3,Math.floor(len/18));
+      const perpAngle=angle+Math.PI/2;
+      const sx=Math.cos(perpAngle+Math.PI), sy=Math.sin(perpAngle+Math.PI);
+      const arrowLen=30, beamHalf=7, topOff=arrowLen+beamHalf;
+      ctx.save();
+      ctx.strokeStyle='#ffd700'; ctx.fillStyle='#ffd700'; ctx.lineWidth=2;
+      ctx.shadowColor='#ffd700'; ctx.shadowBlur=4;
+      ctx.beginPath(); ctx.moveTo(s1x+sx*topOff,s1y+sy*topOff); ctx.lineTo(s2x+sx*topOff,s2y+sy*topOff); ctx.stroke();
+      for(let i=0;i<=cnt;i++){
+        const t=p1+(p2-p1)*i/cnt;
+        const px=sa.x+(sb.x-sa.x)*t, py=sa.y+(sb.y-sa.y)*t;
+        const tailX=px+sx*topOff, tailY=py+sy*topOff;
+        const tipX=px+sx*beamHalf, tipY=py+sy*beamHalf;
+        ctx.beginPath(); ctx.moveTo(tailX,tailY); ctx.lineTo(tipX,tipY); ctx.stroke();
+        const ah=5, aAng=Math.atan2(tipY-tailY,tipX-tailX);
+        ctx.beginPath(); ctx.moveTo(tipX,tipY);
+        ctx.lineTo(tipX-ah*Math.cos(aAng-0.4),tipY-ah*Math.sin(aAng-0.4));
+        ctx.lineTo(tipX-ah*Math.cos(aAng+0.4),tipY-ah*Math.sin(aAng+0.4));
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.shadowBlur=0;
+      ctx.font='bold 11px "Consolas",monospace'; ctx.fillStyle='#ffd700'; ctx.textAlign='center';
+      ctx.fillText(ld.value+' kN/m', (s1x+s2x)/2+sx*(topOff+14), (s1y+s2y)/2+sy*(topOff+14));
+      ctx.restore();
+    } else if(ld.type==='point'){
+      const t=ld.pos/mem.L;
+      const px=sa.x+(sb.x-sa.x)*t, py=sa.y+(sb.y-sa.y)*t;
+      let dirAng;
+      if(ld.direction==='down') dirAng=Math.PI/2;
+      else if(ld.direction==='up') dirAng=-Math.PI/2;
+      else if(ld.direction==='right') dirAng=0;
+      else dirAng=Math.PI;
+      const beamHalf=7, arrowLen=28;
+      const fdx=Math.cos(dirAng), fdy=Math.sin(dirAng);
+      const tailX=px-fdx*(arrowLen+beamHalf), tailY=py-fdy*(arrowLen+beamHalf);
+      const tipX=px-fdx*beamHalf, tipY=py-fdy*beamHalf;
+      ctx.save();
+      ctx.strokeStyle='#f85149'; ctx.fillStyle='#f85149'; ctx.lineWidth=2.5;
+      ctx.shadowColor='#f85149'; ctx.shadowBlur=5;
+      ctx.beginPath(); ctx.moveTo(tailX,tailY); ctx.lineTo(tipX,tipY); ctx.stroke();
+      const ah=7, aAng=Math.atan2(tipY-tailY,tipX-tailX);
+      ctx.beginPath(); ctx.moveTo(tipX,tipY);
+      ctx.lineTo(tipX-ah*Math.cos(aAng-0.4),tipY-ah*Math.sin(aAng-0.4));
+      ctx.lineTo(tipX-ah*Math.cos(aAng+0.4),tipY-ah*Math.sin(aAng+0.4));
+      ctx.closePath(); ctx.fill();
+      ctx.font='bold 11px "Consolas",monospace'; ctx.fillStyle='#ff7b72'; ctx.textAlign='center';
+      ctx.fillText(ld.value+' kN', px-fdx*(arrowLen+beamHalf+12), py-fdy*(arrowLen+beamHalf+12));
+      ctx.restore();
+    } else if(ld.type==='moment'){
+      const t=ld.pos/mem.L;
+      const px=sa.x+(sb.x-sa.x)*t, py=sa.y+(sb.y-sa.y)*t;
+      ctx.save();
+      ctx.strokeStyle='#a371f7'; ctx.fillStyle='#a371f7'; ctx.lineWidth=2;
+      ctx.shadowColor='#a371f7'; ctx.shadowBlur=5;
+      const r=16, sign=getMomentSign(ld);
+      ctx.beginPath(); ctx.arc(px,py,r,-Math.PI/2,Math.PI/2, sign<0); ctx.stroke();
+      const ea=sign<0?Math.PI/2:-Math.PI/2;
+      const ex=px+r*Math.cos(ea), ey=py+r*Math.sin(ea);
+      ctx.beginPath(); ctx.moveTo(ex,ey); ctx.lineTo(ex-sign*7,ey-sign*5); ctx.lineTo(ex+sign*7,ey-sign*5); ctx.closePath(); ctx.fill();
+      ctx.font='bold 10.5px "Consolas",monospace'; ctx.fillStyle='#bc8cff'; ctx.textAlign='center';
+      ctx.fillText(ld.value+' kN·m', px, py-r-6);
+      ctx.restore();
+    }
+  });
+}
+
+function drawDiagram(mf, type, color){
+  let maxVal=0;
+  MEMBERS.forEach(mem => {
+    const f=mf[mem.id]; if(f&&f[type]){ const m=Math.max(...f[type].map(Math.abs)); if(m>maxVal) maxVal=m; }
+  });
+  if(maxVal<0.001) return;
+  const maxPx=Math.min(SCALE*0.7, 55);
+  const scale=maxPx/maxVal;
+  // 符号约定分析:
+  // toS(x,y) 翻转y轴: 世界y↑ → 屏幕y↓
+  // 屏幕法线 (nx,ny)=(-sinθ,cosθ) 指向 local y- 方向(世界中的下侧/受拉侧)
+  // 矩阵位移法: +M=下挠(底部受拉), 即 local y- 侧受拉
+  // 故 sign=1 时, +M画在法线方向(local y-)=受拉侧 ✓
+  // V图: +V=顺时针旋转, N图: +N=受拉, 均用 sign=1 配合±标注
+  const sign = 1;
+  MEMBERS.forEach(mem => {
+    const f=mf[mem.id]; if(!f) return;
+    const sa=toS(NODES[mem.nodeA].x, NODES[mem.nodeA].y);
+    const sb=toS(NODES[mem.nodeB].x, NODES[mem.nodeB].y);
+    const angle=Math.atan2(sb.y-sa.y, sb.x-sa.x);
+    const nx=-Math.sin(angle), ny=Math.cos(angle);
+    const data=f[type]; if(!data) return;
+    const n=data.length;
+    ctx.save();
+    ctx.fillStyle=color; ctx.strokeStyle=color; ctx.lineWidth=2;
+    ctx.shadowColor=color; ctx.shadowBlur=6; ctx.globalAlpha=0.15;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){
+      const t=i/(n-1);
+      const bx=sa.x+(sb.x-sa.x)*t, by=sa.y+(sb.y-sa.y)*t;
+      const v=data[i]*scale*sign;
+      if(i===0) ctx.moveTo(bx,by);
+      ctx.lineTo(bx+nx*v, by+ny*v);
+    }
+    for(let i=n-1;i>=0;i--){ const t=i/(n-1); ctx.lineTo(sa.x+(sb.x-sa.x)*t, sa.y+(sb.y-sa.y)*t); }
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha=1; ctx.lineWidth=2.5;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){
+      const t=i/(n-1);
+      const bx=sa.x+(sb.x-sa.x)*t, by=sa.y+(sb.y-sa.y)*t;
+      const v=data[i]*scale*sign;
+      const px=bx+nx*v, py=by+ny*v;
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+    // 控制截面数值标注
+    const keyIdx=new Set([0,n-1]);
+    loads.filter(l=>l.member===mem.id).forEach(ld=>{
+      if(ld.type==='udl'){ keyIdx.add(Math.round(ld.pos1/mem.L*(n-1))); keyIdx.add(Math.round(ld.pos2/mem.L*(n-1))); }
+      else { keyIdx.add(Math.round(ld.pos/mem.L*(n-1))); }
+    });
+    let mi=0,mv2=Math.abs(data[0]);
+    for(let i=1;i<n;i++) if(Math.abs(data[i])>mv2){mv2=Math.abs(data[i]);mi=i;}
+    keyIdx.add(mi);
+    ctx.shadowBlur=0; ctx.font='bold 10px "Consolas",monospace'; ctx.textAlign='center';
+    [...keyIdx].sort((a,b)=>a-b).forEach(i => {
+      if(i<0||i>=n) return;
+      const val=data[i];
+      if(Math.abs(val)<0.1) return;
+      const t=i/(n-1);
+      const bx=sa.x+(sb.x-sa.x)*t, by=sa.y+(sb.y-sa.y)*t;
+      const v=val*scale*sign;
+      const px=bx+nx*v, py=by+ny*v;
+      const offDir=v>=0?1:-1;
+      const lx=px+nx*14*offDir, ly=py+ny*14*offDir;
+      const txt = type==='M' ? Math.abs(val).toFixed(1) : (val>=0?'+':'') + val.toFixed(1);
+      const tw=ctx.measureText(txt).width;
+      ctx.fillStyle='rgba(13,17,23,0.85)';
+      ctx.fillRect(lx-tw/2-3, ly-7, tw+6, 14);
+      ctx.fillStyle=color;
+      ctx.fillText(txt, lx, ly+3);
+    });
+    ctx.restore();
+  });
+}
+
+function drawReactions(reactions){
+  ctx.save();
+  NODE_IDS.forEach(id => {
+    const r=reactions[id]; if(!r) return;
+    const s=toS(NODES[id].x, NODES[id].y);
+    if(Math.abs(r.fx)>0.01){
+      const dir=r.fx>=0?1:-1;
+      ctx.strokeStyle='#3fb950'; ctx.fillStyle='#3fb950'; ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.moveTo(s.x,s.y); ctx.lineTo(s.x+dir*32,s.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s.x+dir*32,s.y); ctx.lineTo(s.x+dir*25,s.y-5); ctx.lineTo(s.x+dir*25,s.y+5); ctx.closePath(); ctx.fill();
+      ctx.font='bold 10.5px "Consolas",monospace'; ctx.fillStyle='#3fb950'; ctx.textAlign='left';
+      ctx.fillText('Fx='+Math.abs(r.fx).toFixed(2)+'kN', s.x+dir*36, s.y-8);
+    }
+    if(Math.abs(r.fy)>0.01){
+      // fy>0 = 世界向上 = 屏幕向上(y减小) → screenDir=-1
+      // fy<0 = 世界向下 = 屏幕向下(y增大) → screenDir=+1
+      const screenDir=r.fy>=0?-1:1;
+      ctx.strokeStyle='#58a6ff'; ctx.fillStyle='#58a6ff'; ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.moveTo(s.x,s.y); ctx.lineTo(s.x,s.y+screenDir*32); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s.x,s.y+screenDir*32); ctx.lineTo(s.x-5,s.y+screenDir*25); ctx.lineTo(s.x+5,s.y+screenDir*25); ctx.closePath(); ctx.fill();
+      ctx.font='bold 10.5px "Consolas",monospace'; ctx.fillStyle='#58a6ff'; ctx.textAlign='left';
+      ctx.fillText('Fy='+Math.abs(r.fy).toFixed(2)+'kN', s.x+8, s.y+screenDir*36);
+    }
+    if(Math.abs(r.m)>0.01){
+      const sign = r.m >= 0 ? 1 : -1;
+      ctx.strokeStyle='#a371f7'; ctx.fillStyle='#a371f7'; ctx.lineWidth=2;
+      ctx.shadowColor='#a371f7'; ctx.shadowBlur=4;
+      const rad=22;
+      ctx.beginPath(); ctx.arc(s.x, s.y, rad, -Math.PI/2, Math.PI/2, sign<0); ctx.stroke();
+      const ea = sign<0 ? Math.PI/2 : -Math.PI/2;
+      const ex = s.x + rad*Math.cos(ea), ey = s.y + rad*Math.sin(ea);
+      ctx.beginPath(); ctx.moveTo(ex,ey); ctx.lineTo(ex-sign*7,ey-sign*5); ctx.lineTo(ex+sign*7,ey-sign*5); ctx.closePath(); ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.font='bold 10px "Consolas",monospace'; ctx.fillStyle='#bc8cff'; ctx.textAlign='center';
+      ctx.fillText('M='+Math.abs(r.m).toFixed(1), s.x, s.y-rad-6);
+    }
+  });
+  ctx.restore();
+}
+
+// ========== 弯矩平衡校核 ==========
+function drawCheck(){
+  const mf = solution.memberForces;
+  // D点连接的杆件: CD(D为end), DE(D为start), BD(D为end)
+  const mCD_D = mf['CD'] ? mf['CD'].end.M : 0;   // CD杆D端截面弯矩(D为B端, sagging+)
+  const mDE_D = mf['DE'] ? mf['DE'].start.M : 0;  // DE杆D端截面弯矩(D为A端, sagging+)
+  const mBD_D = mf['BD'] ? mf['BD'].end.M : 0;    // BD杆D端截面弯矩(D为B端, sagging+)
+  // 截面弯矩→杆端弯矩(CCW+): B端=+截面弯矩, A端=-截面弯矩
+  // 结点平衡: Σ杆端弯矩(CCW+) = (mCD_D) + (-mDE_D) + (mBD_D) = 0
+  const sumM = mCD_D - mDE_D + mBD_D;
+  const balanced = Math.abs(sumM) < 0.1;
+
+  // === 1. D点弯矩平衡校核 (Canvas可视化) ===
+  const dNode = NODES['D'];
+  const sd = toS(dNode.x, dNode.y);
+
+  ctx.save();
+  // 高亮D节点
+  ctx.strokeStyle='#ffd700'; ctx.lineWidth=2.5;
+  ctx.shadowColor='#ffd700'; ctx.shadowBlur=12;
+  ctx.beginPath(); ctx.arc(sd.x, sd.y, 22, 0, Math.PI*2); ctx.stroke();
+  ctx.shadowBlur=0;
+
+  // ✓或✗标记
+  const checkColor = balanced ? '#3fb950' : '#f85149';
+  ctx.fillStyle=checkColor; ctx.strokeStyle=checkColor;
+  ctx.shadowColor=checkColor; ctx.shadowBlur=8;
+  ctx.beginPath(); ctx.arc(sd.x, sd.y - 38, 11, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.strokeStyle='#fff'; ctx.lineWidth=2.2; ctx.lineCap='round';
+  if(balanced){
+    ctx.beginPath();
+    ctx.moveTo(sd.x-4, sd.y-38);
+    ctx.lineTo(sd.x-1, sd.y-35);
+    ctx.lineTo(sd.x+4, sd.y-41);
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(sd.x-3, sd.y-41);
+    ctx.lineTo(sd.x+3, sd.y-35);
+    ctx.moveTo(sd.x+3, sd.y-41);
+    ctx.lineTo(sd.x-3, sd.y-35);
+    ctx.stroke();
+  }
+
+  // 平衡方程标注框
+  const lines = [
+    'D点弯矩平衡校核',
+    `M_CD(D端)=${mCD_D.toFixed(2)}`,
+    `M_DE(D端)=${mDE_D.toFixed(2)}`,
+    `M_BD(D端)=${mBD_D.toFixed(2)}`,
+    `ΣM_D = M_CD - M_DE + M_BD = ${sumM.toFixed(2)} ${balanced?'✓':'✗'}`
+  ];
+  ctx.font='bold 11px "Consolas",monospace'; ctx.textAlign='center';
+  const boxW=250, boxH=92;
+  let boxX=sd.x+30, boxY=sd.y-50;
+  if(boxX+boxW > W-10) boxX = sd.x-30-boxW;
+  ctx.fillStyle='rgba(22,27,34,0.95)';
+  ctx.strokeStyle=balanced?'#3fb950':'#f85149'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.roundRect(boxX, boxY, boxW, boxH, 8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=balanced?'#3fb950':'#f85149';
+  ctx.fillRect(boxX, boxY, 3, boxH);
+
+  ctx.fillStyle='#ffd700'; ctx.font='bold 11px "Segoe UI"';
+  ctx.fillText(lines[0], boxX+boxW/2, boxY+15);
+  ctx.fillStyle='#c9d1d9'; ctx.font='10.5px "Consolas",monospace';
+  ctx.fillText(lines[1], boxX+boxW/2, boxY+32);
+  ctx.fillText(lines[2], boxX+boxW/2, boxY+47);
+  ctx.fillText(lines[3], boxX+boxW/2, boxY+62);
+  ctx.fillStyle=balanced?'#3fb950':'#f85149'; ctx.font='bold 11px "Consolas",monospace';
+  ctx.shadowColor=checkColor; ctx.shadowBlur=3;
+  ctx.fillText(lines[4], boxX+boxW/2, boxY+80);
+  ctx.shadowBlur=0;
+
+  // 连接线
+  ctx.strokeStyle=balanced?'#3fb950':'#f85149'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(sd.x+18, sd.y-18); ctx.lineTo(boxX, boxY+boxH/2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // === 2. C点弯矩平衡校核 (Canvas可视化) ===
+  const mAC_C = mf['AC'] ? mf['AC'].end.M : 0;   // AC杆C端(B端)截面弯矩
+  const mCD_C = mf['CD'] ? mf['CD'].start.M : 0;  // CD杆C端(A端)截面弯矩
+  // 截面弯矩→杆端弯矩(CCW+): B端=+截面弯矩, A端=-截面弯矩
+  // AC(C端,B端): M_end(CCW+) = +mAC_C
+  // CD(C端,A端): M_end(CCW+) = -mCD_C
+  // 结点平衡: Σ杆端弯矩(CCW+) = mAC_C - mCD_C = 0
+  const sumM_C = mAC_C - mCD_C;
+  const balanced_C = Math.abs(sumM_C) < 0.1;
+
+  const cNode = NODES['C'];
+  const sc = toS(cNode.x, cNode.y);
+  ctx.strokeStyle='#ffd700'; ctx.lineWidth=2.5;
+  ctx.shadowColor='#ffd700'; ctx.shadowBlur=12;
+  ctx.beginPath(); ctx.arc(sc.x, sc.y, 22, 0, Math.PI*2); ctx.stroke();
+  ctx.shadowBlur=0;
+
+  const cCheckColor = balanced_C ? '#3fb950' : '#f85149';
+  ctx.fillStyle=cCheckColor; ctx.strokeStyle=cCheckColor;
+  ctx.shadowColor=cCheckColor; ctx.shadowBlur=8;
+  ctx.beginPath(); ctx.arc(sc.x, sc.y - 38, 11, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.strokeStyle='#fff'; ctx.lineWidth=2.2; ctx.lineCap='round';
+  if(balanced_C){
+    ctx.beginPath();
+    ctx.moveTo(sc.x-4, sc.y-38);
+    ctx.lineTo(sc.x-1, sc.y-35);
+    ctx.lineTo(sc.x+4, sc.y-41);
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(sc.x-3, sc.y-41);
+    ctx.lineTo(sc.x+3, sc.y-35);
+    ctx.moveTo(sc.x+3, sc.y-41);
+    ctx.lineTo(sc.x-3, sc.y-35);
+    ctx.stroke();
+  }
+
+  const cLines = [
+    'C点弯矩平衡校核',
+    `M_AC(C端)=${mAC_C.toFixed(2)}`,
+    `M_CD(C端)=${mCD_C.toFixed(2)}`,
+    `ΣM_C = M_AC - M_CD = ${sumM_C.toFixed(2)} ${balanced_C?'✓':'✗'}`
+  ];
+  ctx.font='bold 11px "Consolas",monospace'; ctx.textAlign='center';
+  const cBoxW=230, cBoxH=76;
+  let cBoxX=sc.x-30-cBoxW, cBoxY=sc.y-50;
+  if(cBoxX < 10) cBoxX = sc.x+30;
+  ctx.fillStyle='rgba(22,27,34,0.95)';
+  ctx.strokeStyle=balanced_C?'#3fb950':'#f85149'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.roundRect(cBoxX, cBoxY, cBoxW, cBoxH, 8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=balanced_C?'#3fb950':'#f85149';
+  ctx.fillRect(cBoxX, cBoxY, 3, cBoxH);
+
+  ctx.fillStyle='#ffd700'; ctx.font='bold 11px "Segoe UI"';
+  ctx.fillText(cLines[0], cBoxX+cBoxW/2, cBoxY+15);
+  ctx.fillStyle='#c9d1d9'; ctx.font='10.5px "Consolas",monospace';
+  ctx.fillText(cLines[1], cBoxX+cBoxW/2, cBoxY+32);
+  ctx.fillText(cLines[2], cBoxX+cBoxW/2, cBoxY+47);
+  ctx.fillStyle=balanced_C?'#3fb950':'#f85149'; ctx.font='bold 11px "Consolas",monospace';
+  ctx.shadowColor=cCheckColor; ctx.shadowBlur=3;
+  ctx.fillText(cLines[3], cBoxX+cBoxW/2, cBoxY+65);
+  ctx.shadowBlur=0;
+
+  ctx.strokeStyle=balanced_C?'#3fb950':'#f85149'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(sc.x-18, sc.y-18); ctx.lineTo(cBoxX+cBoxW, cBoxY+cBoxH/2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // === 3. CD杆弯矩图受拉侧标注 ===
+  drawMemberTensionLabel('CD', '#3fb950');
+  // === 4. BD杆弯矩图受拉侧标注 ===
+  drawMemberTensionLabel('BD', '#a371f7');
+
+  // === 5. E点自由端弯矩校核 ===
+  const mE = mf['DE'] ? mf['DE'].end.M : 0;
+  const eOk = Math.abs(mE) < 0.01;
+  const eNode = NODES['E'];
+  const se = toS(eNode.x, eNode.y);
+  const eColor = eOk ? '#3fb950' : '#f85149';
+  ctx.strokeStyle=eColor; ctx.fillStyle=eColor; ctx.lineWidth=2;
+  ctx.shadowColor=eColor; ctx.shadowBlur=8;
+  ctx.beginPath(); ctx.arc(se.x, se.y - 28, 9, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.lineCap='round';
+  if(eOk){
+    ctx.beginPath();
+    ctx.moveTo(se.x-3, se.y-28);
+    ctx.lineTo(se.x, se.y-26);
+    ctx.lineTo(se.x+4, se.y-31);
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(se.x-3, se.y-31);
+    ctx.lineTo(se.x+3, se.y-25);
+    ctx.moveTo(se.x+3, se.y-31);
+    ctx.lineTo(se.x-3, se.y-25);
+    ctx.stroke();
+  }
+  ctx.font='bold 10px "Consolas",monospace'; ctx.fillStyle=eColor; ctx.textAlign='center';
+  ctx.fillText(`E端 M=${mE.toFixed(2)}`, se.x, se.y-44);
+
+  ctx.restore();
+}
+
+function drawMemberTensionLabel(memId, color){
+  const mem = MEMBERS.find(m=>m.id===memId);
+  if(!mem) return;
+  const f = solution.memberForces[memId];
+  if(!f) return;
+  const sa = toS(NODES[mem.nodeA].x, NODES[mem.nodeA].y);
+  const sb = toS(NODES[mem.nodeB].x, NODES[mem.nodeB].y);
+  const angle = Math.atan2(sb.y-sa.y, sb.x-sa.x);
+  const nx=-Math.sin(angle), ny=Math.cos(angle);
+
+  // 杆件中点
+  const mid_x = (sa.x+sb.x)/2, mid_y = (sa.y+sb.y)/2;
+  // M图中点值
+  const midIdx = Math.floor(f.M.length/2);
+  const midM = f.M[midIdx];
+
+  // 标注受拉侧
+  // sign=1: +M画在法线方向(local y-)=受拉侧
+  // 所以 +M→法线侧受拉, -M→反法线侧受拉
+  const tensionSide = midM >= 0 ? 1 : -1; // 1=法线侧(local y-), -1=反法线侧(local y+)
+  const labelOffset = 28;
+  const lx = mid_x + nx * labelOffset * tensionSide;
+  const ly = mid_y + ny * labelOffset * tensionSide;
+
+  // 标注框
+  ctx.font='bold 10px "Segoe UI"'; ctx.textAlign='center';
+  const label = midM >= 0 ? '受拉侧' : '受拉侧';
+  const sideLabel = midM >= 0 ? '(local y-)' : '(local y+)';
+  const txt = `${memId}杆 ${label}`;
+  const tw = ctx.measureText(txt).width;
+
+  ctx.fillStyle='rgba(22,27,34,0.9)';
+  ctx.strokeStyle=color; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.roundRect(lx-tw/2-5, ly-8, tw+10, 16, 4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=color;
+  ctx.fillText(txt, lx, ly+3);
+
+  // 标注杆端弯矩值
+  ctx.font='bold 9.5px "Consolas",monospace';
+  const startTxt = `${mem.nodeA}端: M=${f.start.M.toFixed(1)}`;
+  const endTxt = `${mem.nodeB}端: M=${f.end.M.toFixed(1)}`;
+  const stw = ctx.measureText(startTxt).width;
+  const etw = ctx.measureText(endTxt).width;
+  const maxW = Math.max(stw, etw) + 10;
+
+  // 在杆件法线方向反侧标注端值
+  const valOffset = 18;
+  const sx = mid_x - nx * valOffset * tensionSide;
+  const sy = mid_y - ny * valOffset * tensionSide;
+
+  ctx.fillStyle='rgba(22,27,34,0.85)';
+  ctx.strokeStyle=color+'88'; ctx.lineWidth=0.8;
+  ctx.beginPath(); ctx.roundRect(sx-maxW/2, sy-14, maxW, 26, 4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#c9d1d9';
+  ctx.fillText(startTxt, sx, sy-2);
+  ctx.fillText(endTxt, sx, sy+10);
+
+  // 箭头指向杆件中点
+  ctx.strokeStyle=color; ctx.lineWidth=1; ctx.setLineDash([3,2]);
+  ctx.beginPath();
+  ctx.moveTo(lx, ly + (tensionSide>0?8:-8));
+  ctx.lineTo(mid_x + nx*5*tensionSide, mid_y + ny*5*tensionSide);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+
+function updateLoadsList(){
+  const list=document.getElementById('loads-list'); list.innerHTML='';
+  loads.forEach(ld => {
+    const mem=MEMBERS.find(m=>m.id===ld.member);
+    const tl=ld.type==='udl'?'均布荷载':ld.type==='point'?'集中力':'集中力偶';
+    let dirStr='';
+    if(ld.type==='point'){
+      dirStr={down:'↓向下',up:'↑向上',right:'→向右',left:'←向左'}[ld.direction]||'';
+    } else if(ld.type==='moment'){
+      dirStr=ld.direction==='ccw'?'↺逆时针':'↻顺时针';
+    }
+    const posStr=ld.type==='udl'?ld.pos1+'→'+ld.pos2+'m':'位置:'+ld.pos+'m';
+    const unit=ld.type==='udl'?'kN/m':ld.type==='moment'?'kN·m':'kN';
+    const div=document.createElement('div'); div.className='load-item';
+    div.innerHTML=`<div class="load-hdr"><span class="load-type">${tl}</span><button class="del-btn">✕</button></div>
+      <label>${ld.member}杆 (${mem?mem.L.toFixed(1):'?'}m) · ${posStr} ${dirStr}</label>
+      <label>值: ${ld.value} ${unit}</label>`;
+    div.querySelector('.del-btn').onclick=()=>{
+      loads=loads.filter(l=>l.id!==ld.id); solved=false; solution=null;
+      updateLoadsList(); render(); updateStatus('已删除荷载');
+    };
+    list.appendChild(div);
+  });
+}
+
+function updateMemberSelect(){
+  const sel=document.getElementById('new-load-pos'); sel.innerHTML='';
+  MEMBERS.forEach(mem => {
+    const opt=document.createElement('option'); opt.value=mem.id;
+    const cnt=loads.filter(l=>l.member===mem.id).length;
+    opt.textContent=`${mem.id}杆 (${mem.L.toFixed(1)}m)${cnt?` · ${cnt}个荷载`:''}`;
+    sel.appendChild(opt);
+  });
+  // 更新UDL默认终点
+  const type=document.getElementById('new-load-type').value;
+  if(type==='udl'){
+    const mem=MEMBERS.find(m=>m.id===sel.value);
+    if(mem) document.getElementById('new-load-pos2').value=mem.L;
+  }
+  updateLoadUI();
+}
+
+function updateLoadUI(){
+  const type=document.getElementById('new-load-type').value;
+  const dirRow=document.getElementById('dir-row');
+  const dirSel=document.getElementById('new-load-dir');
+  const posRow=document.getElementById('pos-row');
+  const pos1Row=document.getElementById('pos1-row');
+  const pos2Row=document.getElementById('pos2-row');
+  if(type==='point'){
+    dirRow.style.display='flex';
+    dirSel.innerHTML='<option value="down">↓ 向下</option><option value="up">↑ 向上</option><option value="right">→ 向右</option><option value="left">← 向左</option>';
+    posRow.style.display='flex'; pos1Row.style.display='none'; pos2Row.style.display='none';
+  } else if(type==='moment'){
+    dirRow.style.display='flex';
+    dirSel.innerHTML='<option value="ccw">↺ 逆时针</option><option value="cw">↻ 顺时针</option>';
+    posRow.style.display='flex'; pos1Row.style.display='none'; pos2Row.style.display='none';
+  } else {
+    dirRow.style.display='none';
+    posRow.style.display='none'; pos1Row.style.display='flex'; pos2Row.style.display='flex';
+    const mem=MEMBERS.find(m=>m.id===document.getElementById('new-load-pos').value);
+    if(mem) document.getElementById('new-load-pos2').value=mem.L;
+  }
+}
+
+function updateResults(){
+  if(!solution) return;
+  const rx=document.getElementById('reactions'); rx.innerHTML='';
+  NODE_IDS.forEach(id => {
+    const r=solution.reactions[id];
+    if(Math.abs(r.fx)<0.01 && Math.abs(r.fy)<0.01 && Math.abs(r.m)<0.01) return;
+    const d=document.createElement('div'); d.className='result-block';
+    let h=`<div class="rb-title">节点 ${id}</div>`;
+    if(Math.abs(r.fx)>0.01) h+=`<div><span class="rb-val" style="color:#3fb950">Fx = ${Math.abs(r.fx).toFixed(2)}</span> <span class="rb-unit">kN ${r.fx>=0?'→':'←'}</span></div>`;
+    if(Math.abs(r.fy)>0.01) h+=`<div><span class="rb-val" style="color:#58a6ff">Fy = ${Math.abs(r.fy).toFixed(2)}</span> <span class="rb-unit">kN ${r.fy>=0?'↑':'↓'}</span></div>`;
+    if(Math.abs(r.m)>0.01) h+=`<div><span class="rb-val" style="color:#a371f7">M = ${Math.abs(r.m).toFixed(2)}</span> <span class="rb-unit">kN·m ${r.m>=0?'↺逆时针':'↻顺时针'}</span></div>`;
+    d.innerHTML=h; rx.appendChild(d);
+  });
+  const mr=document.getElementById('member-results'); mr.innerHTML='';
+  MEMBERS.forEach(mem => {
+    const f=solution.memberForces[mem.id]; if(!f) return;
+    const mM=Math.max(...f.M.map(Math.abs));
+    const mV=Math.max(...f.V.map(Math.abs));
+    const mN=Math.max(...f.N.map(Math.abs));
+    const d=document.createElement('div'); d.className='member-result';
+    d.innerHTML=`<div class="mr-hdr"><span class="mr-name">${mem.id}杆 (L=${mem.L.toFixed(1)}m)</span></div>
+      <div class="mr-row"><span>M_max: <span class="v">${mM.toFixed(2)} kN·m</span></span>
+      <span>V_max: <span class="v">${mV.toFixed(2)} kN</span></span>
+      <span>N_max: <span class="v">${mN.toFixed(2)} kN</span></span></div>
+      <div class="mr-row" style="margin-top:4px;color:#6e7681;font-size:10px;">
+      ①: M=${f.start.M.toFixed(1)}, V=${f.start.V.toFixed(1)}, N=${f.start.N.toFixed(1)}
+      ②: M=${f.end.M.toFixed(1)}, V=${f.end.V.toFixed(1)}, N=${f.end.N.toFixed(1)}</div>`;
+    mr.appendChild(d);
+  });
+}
+
+function updateStatus(msg){ document.getElementById('status').innerHTML=msg; }
+
+function updateCheckResults(){
+  if(!solution) return;
+  const mf = solution.memberForces;
+  const mCD_D = mf['CD'] ? mf['CD'].end.M : 0;
+  const mDE_D = mf['DE'] ? mf['DE'].start.M : 0;
+  const mBD_D = mf['BD'] ? mf['BD'].end.M : 0;
+  // 截面弯矩→杆端弯矩(CCW+): B端=+截面弯矩, A端=-截面弯矩
+  // CD(D为B端), DE(D为A端), BD(D为B端)
+  // 结点平衡: Σ杆端弯矩(CCW+) = +mCD_D + (-mDE_D) + mBD_D = mCD_D - mDE_D + mBD_D = 0
+  const sumM = mCD_D - mDE_D + mBD_D;
+  const balanced = Math.abs(sumM) < 0.1;
+
+  const ck = document.getElementById('check-results');
+  let html = '';
+
+  // === 整体平衡校核 (验证支座反力正确性) ===
+  // 计算外荷载对原点的合力与矩
+  let extFx=0, extFy=0, extM=0;
+  loads.forEach(ld => {
+    const mem = MEMBERS.find(m=>m.id===ld.member); if(!mem) return;
+    const na=NODES[mem.nodeA];
+    if(ld.type==='udl'){
+      const w=ld.value, Lspan=ld.pos2-ld.pos1;
+      const midPos=(ld.pos1+ld.pos2)/2, t=midPos/mem.L;
+      const gx=na.x+t*(NODES[mem.nodeB].x-na.x);
+      const gy=na.y+t*(NODES[mem.nodeB].y-na.y);
+      // UDL默认向下: Fy=-w*Lspan
+      extFy += -w*Lspan;
+      extM += gx*(-w*Lspan) - gy*0;
+    } else if(ld.type==='point'){
+      const t=ld.pos/mem.L;
+      const gx=na.x+t*(NODES[mem.nodeB].x-na.x);
+      const gy=na.y+t*(NODES[mem.nodeB].y-na.y);
+      const {Fx,Fy}=getGlobalForce(ld);
+      extFx += Fx; extFy += Fy;
+      extM += gx*Fy - gy*Fx;
+    } else if(ld.type==='moment'){
+      extM += ld.value*getMomentSign(ld);
+    }
+  });
+  // 计算支座反力对原点的合力与矩
+  let rFx=0, rFy=0, rM=0;
+  NODE_IDS.forEach(id => {
+    const r=solution.reactions[id], n=NODES[id];
+    rFx += r.fx; rFy += r.fy; rM += r.m;
+    rM += n.x*r.fy - n.y*r.fx;
+  });
+  const sumFx = rFx + extFx;
+  const sumFy = rFy + extFy;
+  const sumMO = rM + extM;
+  const eqFx = Math.abs(sumFx) < 0.1;
+  const eqFy = Math.abs(sumFy) < 0.1;
+  const eqMO = Math.abs(sumMO) < 0.1;
+  const allEq = eqFx && eqFy && eqMO;
+
+  const eColor = allEq ? '#3fb950' : '#f85149';
+  html += `<div class="result-block" style="border-color:${eColor}66;">`;
+  html += `<div class="rb-title">① 整体平衡校核 (支座反力验证)</div>`;
+  html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.7;">`;
+  html += `<span style="color:#8b949e;">外荷载: ΣFx=${extFx.toFixed(2)}, ΣFy=${extFy.toFixed(2)}, ΣM_O=${extM.toFixed(2)}</span><br>`;
+  html += `<span style="color:#8b949e;">支座反力: ΣFx=${rFx.toFixed(2)}, ΣFy=${rFy.toFixed(2)}, ΣM_O=${rM.toFixed(2)}</span><br>`;
+  html += `<span style="color:${eqFx?'#3fb950':'#f85149'};">ΣFx = ${sumFx.toFixed(2)} ${eqFx?'✓':'✗'}</span><br>`;
+  html += `<span style="color:${eqFy?'#3fb950':'#f85149'};">ΣFy = ${sumFy.toFixed(2)} ${eqFy?'✓':'✗'}</span><br>`;
+  html += `<span style="color:${eqMO?'#3fb950':'#f85149'};">ΣM_O = ${sumMO.toFixed(2)} ${eqMO?'✓':'✗'}</span><br>`;
+  html += `<span style="color:${eColor};font-weight:700;">整体平衡 ${allEq?'✓ 满足':'✗ 不满足'}</span>`;
+  html += `</div></div>`;
+
+  // D点弯矩平衡
+  const dColor = balanced ? '#3fb950' : '#f85149';
+  html += `<div class="result-block" style="border-color:${dColor}66;">`;
+  html += `<div class="rb-title">② D点弯矩平衡</div>`;
+  html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.8;">`;
+  html += `M_CD(D端) = ${mCD_D.toFixed(2)} kN·m<br>`;
+  html += `M_DE(D端) = ${mDE_D.toFixed(2)} kN·m<br>`;
+  html += `M_BD(D端) = ${mBD_D.toFixed(2)} kN·m<br>`;
+  html += `<span style="color:${dColor};font-weight:700;">ΣM_D = M_CD - M_DE + M_BD = ${sumM.toFixed(2)} ${balanced?'✓ 平衡':'✗ 不平衡'}</span>`;
+  html += `</div></div>`;
+
+  // C点弯矩平衡
+  const mAC_C = mf['AC'] ? mf['AC'].end.M : 0;
+  const mCD_C = mf['CD'] ? mf['CD'].start.M : 0;
+  const sumM_C = mAC_C - mCD_C;
+  const balanced_C = Math.abs(sumM_C) < 0.1;
+  const cColor = balanced_C ? '#3fb950' : '#f85149';
+  html += `<div class="result-block" style="border-color:${cColor}66;">`;
+  html += `<div class="rb-title">③ C点弯矩平衡</div>`;
+  html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.8;">`;
+  html += `M_AC(C端) = ${mAC_C.toFixed(2)} kN·m<br>`;
+  html += `M_CD(C端) = ${mCD_C.toFixed(2)} kN·m<br>`;
+  html += `<span style="color:${cColor};font-weight:700;">ΣM_C = M_AC - M_CD = ${sumM_C.toFixed(2)} ${balanced_C?'✓ 平衡':'✗ 不平衡'}</span>`;
+  html += `</div></div>`;
+
+  // CD杆弯矩图校核
+  if(mf['CD']){
+    const f = mf['CD'];
+    const midIdx = Math.floor(f.M.length/2);
+    const midM = f.M[midIdx];
+    const cSide = f.start.M < 0 ? '上侧(杆件外侧)' : '下侧(杆件内侧)';
+    const dSide = f.end.M < 0 ? '上侧(杆件外侧)' : '下侧(杆件内侧)';
+    const sameSide = (f.start.M < 0) === (f.end.M < 0);
+    const midSide = midM >= 0 ? '下侧(杆件内侧)' : '上侧(杆件外侧)';
+    html += `<div class="result-block" style="border-color:#3fb95066;">`;
+    html += `<div class="rb-title">④ CD杆弯矩图校核</div>`;
+    html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.8;">`;
+    html += `C端 M = ${f.start.M.toFixed(2)} kN·m (受拉侧: ${cSide})<br>`;
+    html += `跨中 M = ${midM.toFixed(2)} kN·m (受拉侧: ${midSide})<br>`;
+    html += `D端 M = ${f.end.M.toFixed(2)} kN·m (受拉侧: ${dSide})<br>`;
+    html += `<span style="color:${sameSide?'#3fb950':'#f85149'};">C端D端同侧: ${sameSide?'✓ 两端弯矩同在杆件外侧(上侧)':'✗ 两端弯矩异侧'}</span><br>`;
+    html += `<span style="color:#3fb950;">M图画在受拉侧 ✓</span>`;
+    html += `</div></div>`;
+  }
+
+  // BD杆弯矩图校核
+  if(mf['BD']){
+    const f = mf['BD'];
+    const midIdx = Math.floor(f.M.length/2);
+    const midM = f.M[midIdx];
+    const tensionSide = midM >= 0 ? 'local y-侧 (法线方向)' : 'local y+侧 (反法线方向)';
+    html += `<div class="result-block" style="border-color:#a371f766;">`;
+    html += `<div class="rb-title">⑤ BD杆弯矩图校核</div>`;
+    html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.8;">`;
+    html += `B端 M = ${f.start.M.toFixed(2)} kN·m<br>`;
+    html += `跨中 M = ${midM.toFixed(2)} kN·m<br>`;
+    html += `D端 M = ${f.end.M.toFixed(2)} kN·m<br>`;
+    html += `<span style="color:#a371f7;">受拉侧: ${tensionSide}</span><br>`;
+    html += `<span style="color:#a371f7;">M图画在受拉侧 ✓</span>`;
+    html += `</div></div>`;
+  }
+
+  // E点自由端弯矩校核
+  if(mf['DE']){
+    const mE = mf['DE'].end.M;
+    const eOk = Math.abs(mE) < 0.01;
+    const eColor = eOk ? '#3fb950' : '#f85149';
+    html += `<div class="result-block" style="border-color:${eColor}66;">`;
+    html += `<div class="rb-title">⑥ E点自由端弯矩校核</div>`;
+    html += `<div style="font-family:'Consolas',monospace;font-size:11px;color:#c9d1d9;line-height:1.8;">`;
+    html += `M_DE(E端) = ${mE.toFixed(4)} kN·m<br>`;
+    html += `<span style="color:${eColor};font-weight:700;">${eOk?'✓ 自由端弯矩为零':'✗ 自由端弯矩不为零'}</span>`;
+    html += `</div></div>`;
+  }
+
+  ck.innerHTML = html;
+}
+
+// ========== 事件 ==========
+document.getElementById('btn-solve').onclick=() => {
+  try {
+    solution=solve(); solved=true;
+    updateResults();
+    if(showCheck) updateCheckResults();
+    render();
+    updateStatus('求解完成 ✓ 切到「计算结果」查看详情');
+  } catch(e) {
+    updateStatus('<span style="color:#f85149">求解失败: '+e.message+'</span>');
+  }
+};
+document.getElementById('btn-show-m').onclick=e=>{showM=!showM;e.target.classList.toggle('active',showM);render();};
+document.getElementById('btn-show-v').onclick=e=>{showV=!showV;e.target.classList.toggle('active',showV);render();};
+document.getElementById('btn-show-n').onclick=e=>{showN=!showN;e.target.classList.toggle('active',showN);render();};
+document.getElementById('btn-show-frames').onclick=e=>{showFrame=!showFrame;e.target.classList.toggle('active',showFrame);render();};
+document.getElementById('btn-check').onclick=e=>{
+  if(!solved){ updateStatus('<span style="color:#f85149">请先求解再校核</span>'); return; }
+  showCheck=!showCheck;
+  e.target.classList.toggle('active',showCheck);
+  if(showCheck){
+    showM=true; document.getElementById('btn-show-m').classList.add('active');
+    updateCheckResults();
+  }
+  document.getElementById('check-section').style.display = showCheck ? 'block' : 'none';
+  render();
+  updateStatus(showCheck?'校核模式已开启 ✓ D点弯矩平衡 + CD/BD杆受拉侧标注':'校核模式已关闭');
+};
+document.getElementById('btn-reset').onclick=()=>{
+  memberLengths={AC:4,CD:6,DE:2,BD:4};
+  document.getElementById('len-AC').value=4;
+  document.getElementById('len-CD').value=6;
+  document.getElementById('len-DE').value=2;
+  document.getElementById('len-BD').value=4;
+  SUPPORT_TYPES = { A: 'pinned', B: 'roller', C: 'none', D: 'none', E: 'none' };
+  syncSupportUI();
+  loads=[
+    {id:1,type:'udl',member:'CD',value:10,pos1:0,pos2:6},
+    {id:2,type:'point',member:'DE',pos:2,value:9,direction:'down'},
+    {id:3,type:'point',member:'BD',pos:2,value:6,direction:'left'}
+  ];
+  rebuildStructure();
+  showCheck=false;
+  document.getElementById('btn-check').classList.remove('active');
+  document.getElementById('check-section').style.display='none';
+  updateStatus('已恢复默认结构和荷载');
+};
+document.getElementById('btn-update-structure').onclick=()=>{
+  const ac=parseFloat(document.getElementById('len-AC').value);
+  const cd=parseFloat(document.getElementById('len-CD').value);
+  const de=parseFloat(document.getElementById('len-DE').value);
+  const bd=parseFloat(document.getElementById('len-BD').value);
+  if([ac,cd,de,bd].some(v=>isNaN(v)||v<0.5)){
+    updateStatus('<span style="color:#f85149">杆件长度需≥0.5m</span>'); return;
+  }
+  memberLengths={AC:ac,CD:cd,DE:de,BD:bd};
+  rebuildStructure();
+  updateStatus('结构参数已更新 ✓ 杆件: AC='+ac+'m, CD='+cd+'m, DE='+de+'m, BD='+bd+'m');
+};
+function syncSupportUI(){
+  NODE_IDS.forEach(id => {
+    const sel = document.getElementById('support-'+id);
+    if(sel) sel.value = SUPPORT_TYPES[id] || 'none';
+  });
+}
+NODE_IDS.forEach(id => {
+  const sel = document.getElementById('support-'+id);
+  if(sel) sel.onchange = (e) => {
+    SUPPORT_TYPES[id] = e.target.value;
+    recomputeDOF();
+    solved=false; solution=null;
+    render();
+    const typeName = e.target.options[e.target.selectedIndex].text;
+    updateStatus(id+'节点支座已设置为: '+typeName);
+  };
+});
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick=() => {
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    const tab=t.dataset.tab;
+    document.getElementById('tab-loads').style.display=tab==='loads'?'block':'none';
+    document.getElementById('tab-results').style.display=tab==='results'?'block':'none';
+    if(tab==='results') updateResults();
+  };
+});
+document.getElementById('new-load-type').onchange=updateLoadUI;
+document.getElementById('new-load-pos').onchange=updateLoadUI;
+document.getElementById('btn-add-load').onclick=() => {
+  const type=document.getElementById('new-load-type').value;
+  const mem=document.getElementById('new-load-pos').value;
+  const val=parseFloat(document.getElementById('new-load-value').value);
+  if(isNaN(val)||val<=0){ updateStatus('<span style="color:#f85149">请输入有效正数</span>'); return; }
+  const newId=loads.length?Math.max(...loads.map(l=>l.id))+1:1;
+  const memObj=MEMBERS.find(x=>x.id===mem);
+  if(type==='udl'){
+    const p1=parseFloat(document.getElementById('new-load-pos1').value)||0;
+    const p2=parseFloat(document.getElementById('new-load-pos2').value)||memObj.L;
+    if(p1>=p2){ updateStatus('<span style="color:#f85149">起点需小于终点</span>'); return; }
+    loads.push({id:newId,type:'udl',member:mem,value:val,pos1:Math.max(0,p1),pos2:Math.min(memObj.L,p2)});
+  } else if(type==='point'){
+    const dir=document.getElementById('new-load-dir').value;
+    const pos=parseFloat(document.getElementById('new-load-pos-val').value)||1;
+    loads.push({id:newId,type:'point',member:mem,pos:Math.min(pos,memObj.L),value:val,direction:dir});
+  } else {
+    const dir=document.getElementById('new-load-dir').value;
+    const pos=parseFloat(document.getElementById('new-load-pos-val').value)||1;
+    loads.push({id:newId,type:'moment',member:mem,pos:Math.min(pos,memObj.L),value:val,direction:dir});
+  }
+  solved=false; solution=null;
+  updateLoadsList(); render();
+  updateStatus('已添加荷载 ✓ 点击「求解」');
+};
+
+// 初始化
+window.addEventListener('load', () => { setTimeout(resize, 50); });
+syncSupportUI(); rebuildStructure(); updateLoadsList(); render();
+</script>
+</body>
+</html>

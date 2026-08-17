@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>伸臂梁弯矩求解 · 切取标列动画</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; font-family:"Segoe UI","Microsoft YaHei",sans-serif; background:#0d1117; color:#e6edf3; overflow:hidden; }
+  #app { display:flex; height:100vh; }
+  #scene-wrap { flex:1; position:relative; overflow:hidden; background:radial-gradient(circle at 50% 50%,#1b2433 0%,#0a0e16 75%); display:flex; flex-direction:column; }
+  #scene-area { flex:0 0 52%; position:relative; min-height:0; border-bottom:1px dashed #30363d; }
+  #scene { position:absolute; top:0; left:0; width:100%; height:100%; display:block; }
+  #solved-area { flex:1; position:relative; overflow-y:auto; padding:10px 18px 60px; }
+  #solved-area::-webkit-scrollbar { width:6px; }
+  #solved-area::-webkit-scrollbar-thumb { background:#30363d; border-radius:3px; }
+  #solved-title { font-size:11px; color:#8b949e; letter-spacing:1.5px; padding:6px 4px 8px; position:sticky; top:0; background:linear-gradient(to bottom,#0a0e16 60%,transparent); z-index:2; }
+  #solved-cards { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; }
+  .solved-card { background:#161b22; border:1px solid #30363d; border-radius:10px; padding:8px 10px 6px; min-width:260px; flex:1 1 auto; max-width:calc(33.33% - 7px); box-shadow:0 2px 8px rgba(0,0,0,0.25); animation:card-in .5s ease-out; }
+  @keyframes card-in { from { opacity:0; transform:translateY(10px) scale(0.97); } to { opacity:1; transform:none; } }
+  .solved-card.current { border-color:#ffd700; box-shadow:0 0 0 1px #ffd700,0 0 15px rgba(255,215,0,0.3); }
+  .solved-card .hdr { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+  .solved-card .idx { font-size:9px; color:#0d1117; background:#ffd700; padding:1px 5px; border-radius:4px; font-weight:700; }
+  .solved-card .sec { font-size:12px; color:#58a6ff; font-weight:700; }
+  .solved-card .mx { font-size:10px; color:#8b949e; margin-left:auto; font-family:"Consolas",monospace; }
+  .solved-card .mini-canvas { width:100%; height:64px; background:#0d1117; border-radius:5px; border:1px solid #21262d; }
+  .solved-card .eq { font-size:10.5px; font-family:"Consolas",monospace; color:#8b949e; padding:4px 1px 0; line-height:1.5; }
+  .solved-card .res { font-size:11px; font-weight:700; color:#3fb950; text-align:right; padding-top:2px; font-family:"Consolas",monospace; }
+  .solved-card .res.neg { color:#f85149; }
+  #stepper { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:11; display:flex; gap:5px; background:rgba(22,27,34,0.92); padding:5px 10px; border-radius:10px; border:1px solid #30363d; backdrop-filter:blur(8px); }
+  .step-badge { padding:3px 9px; border-radius:5px; font-size:10.5px; font-weight:600; color:#484f58; background:#21262d; transition:all .3s; cursor:pointer; white-space:nowrap; }
+  .step-badge.active { color:#fff; background:#1f6feb; box-shadow:0 0 8px rgba(31,111,235,.5); }
+  .step-badge.done { color:#3fb950; background:rgba(63,185,80,0.15); border:1px solid rgba(63,185,80,0.3); }
+  .step-line { width:7px; height:2px; background:#30363d; align-self:center; }
+  #hint-box { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); z-index:10; background:rgba(22,27,34,0.95); border:1px solid #30363d; padding:7px 18px; border-radius:10px; backdrop-filter:blur(8px); font-size:12px; color:#e6edf3; text-align:center; min-width:420px; max-width:720px; }
+  #hint-box .label { font-size:9px; color:#8b949e; letter-spacing:2px; margin-bottom:2px; }
+  #hint-box .hl-y { color:#ffd700; font-weight:600; }
+  #hint-box .hl-b { color:#58a6ff; font-weight:600; }
+  #hint-box .hl-g { color:#3fb950; font-weight:600; }
+  #hint-box .hl-r { color:#f85149; font-weight:600; }
+  #hint-box .hl-p { color:#a371f7; font-weight:600; }
+  #panel { width:300px; background:#161b22; border-left:1px solid #30363d; display:flex; flex-direction:column; overflow:hidden; flex-shrink:0; }
+  #panel h2 { padding:11px 13px; font-size:13.5px; color:#e6edf3; border-bottom:1px solid #30363d; display:flex; align-items:center; gap:8px; }
+  #panel h2 .dot { width:7px; height:7px; border-radius:50%; background:#ffd700; box-shadow:0 0 8px #ffd700; }
+  #panel-body { flex:1; overflow-y:auto; padding:10px 11px; }
+  #panel-body::-webkit-scrollbar { width:5px; }
+  #panel-body::-webkit-scrollbar-thumb { background:#30363d; border-radius:3px; }
+  .btn-row { display:flex; gap:5px; margin-bottom:6px; }
+  .btn { flex:1; padding:7px; border:none; border-radius:7px; cursor:pointer; font-size:12px; font-weight:600; transition:all .2s; }
+  .btn.primary { background:#1f6feb; color:#fff; }
+  .btn.primary:hover { background:#388bfd; }
+  .btn.primary:disabled { background:#21262d; color:#8b949e; cursor:not-allowed; }
+  .btn.warning { background:rgba(255,215,0,0.15); color:#ffd700; border:1px solid rgba(255,215,0,0.4); }
+  .btn.warning:hover { background:rgba(255,215,0,0.25); }
+  .btn.warning:disabled { background:#21262d; color:#8b949e; border-color:#30363d; cursor:not-allowed; }
+  .btn.secondary { background:#21262d; color:#c9d1d9; border:1px solid #30363d; }
+  .btn.secondary:hover { background:#30363d; color:#fff; }
+  .info-block { padding:9px; background:#0d1117; border:1px solid #21262d; border-radius:9px; margin-bottom:9px; font-size:11px; line-height:1.75; color:#8b949e; }
+  .info-block b { color:#c9d1d9; }
+  .info-block .hl-b { color:#58a6ff; font-weight:600; }
+  .info-block .hl-y { color:#ffd700; font-weight:600; }
+  .info-block .hl-g { color:#3fb950; font-weight:600; }
+  .info-block .hl-r { color:#f85149; font-weight:600; }
+  .info-block .hl-p { color:#a371f7; font-weight:600; }
+  .formula-box { font-family:"Consolas",monospace; font-size:11px; color:#c9d1d9; background:rgba(88,166,255,0.06); padding:7px 9px; border-radius:6px; border:1px solid rgba(88,166,255,0.15); margin:5px 0; line-height:1.9; white-space:pre-wrap; }
+  .formula-box .lbl { color:#8b949e; font-size:10px; }
+  .formula-box .var { color:#ffd700; font-weight:600; }
+  .formula-box .op { color:#a371f7; }
+  .formula-box .res { color:#3fb950; font-weight:700; }
+  .formula-box .r { color:#f85149; font-weight:600; }
+  .formula-box .step { color:#58a6ff; font-size:10px; font-weight:600; }
+  .result-table { width:100%; border-collapse:collapse; font-size:10.5px; margin-top:4px; }
+  .result-table th { background:#21262d; color:#8b949e; font-weight:600; padding:4px 5px; text-align:center; border:1px solid #30363d; font-size:9.5px; }
+  .result-table td { padding:4px 5px; text-align:center; border:1px solid #21262d; color:#c9d1d9; font-family:"Consolas",monospace; }
+  .result-table td.pos { color:#3fb950; }
+  .result-table td.neg { color:#f85149; }
+  .result-table td.current { background:rgba(255,215,0,0.15); color:#ffd700; font-weight:700; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scene-wrap">
+    <div id="scene-area">
+      <canvas id="scene"></canvas>
+      <div id="stepper">
+        <div class="step-badge" data-phase="0">① 原结构</div>
+        <div class="step-line"></div>
+        <div class="step-badge" data-phase="1">② 求反力</div>
+        <div class="step-line"></div>
+        <div class="step-badge" data-phase="2">③ 切截面</div>
+        <div class="step-line"></div>
+        <div class="step-badge" data-phase="3">④ 求弯矩</div>
+        <div class="step-line"></div>
+        <div class="step-badge" data-phase="4">⑤ 画M图</div>
+      </div>
+      <div id="hint-box">
+        <div class="label">例题 · 伸臂梁弯矩图绘制</div>
+        <div>点击 <span class="hl-b">▶ 播放动画</span> 开始演示完整求解过程</div>
+      </div>
+    </div>
+    <div id="solved-area">
+      <div id="solved-title">▸ 已完成求解的截面（切→取→标→列→解）· 永久保留，依次排列</div>
+      <div id="solved-cards"></div>
+    </div>
+  </div>
+  <div id="panel">
+    <h2><span class="dot"></span><span>伸臂梁弯矩求解</span></h2>
+    <div id="panel-body">
+      <div class="info-block">
+        <b>结构与荷载</b><br>
+        · A端铰支座，B端可动铰支座（距A为8m）<br>
+        · 伸臂B→G长1m<br>
+        · 均布荷载 <span class="hl-y">q=4kN/m</span>（C→D，4m）<br>
+        · 集中力 <span class="hl-r">20kN↓</span>（E点）<br>
+        · 集中力偶 <span class="hl-p">12kN·m↺</span>（F点）<br>
+        · 集中力 <span class="hl-r">20kN↓</span>（G点）
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" id="btn-play">▶ 播放</button>
+        <button class="btn warning" id="btn-pause" disabled>⏸ 暂停</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn secondary" id="btn-replay">↺ 重新播放</button>
+        <button class="btn secondary" id="btn-next">下一步 →</button>
+      </div>
+      <div class="info-block" id="phase0-block">
+        <b>控制截面</b>
+        <div class="formula-box">A(0)  C(1)  D(5)  E(6)  F(7)  B(8)  G(9)
+剪力零点在CD段内(x≈4.5m)，弯矩在此处有极大值</div>
+      </div>
+      <div class="info-block" id="phase1-block" style="display:none">
+        <b>求支座反力</b>
+        <div class="formula-box" id="reaction-box"></div>
+      </div>
+      <div class="info-block" id="phase2-block" style="display:none">
+        <b>截面信息</b>
+        <div class="formula-box" id="section-box"></div>
+      </div>
+      <div class="info-block" id="phase3-block" style="display:none">
+        <b>隔离体弯矩计算</b>
+        <div class="formula-box" id="calc-box"></div>
+      </div>
+      <div class="info-block" id="phase4-block" style="display:none">
+        <b>各控制截面弯矩汇总</b>
+        <table class="result-table" id="result-table">
+          <tr><th>截面</th><th>x(m)</th><th>M(kN·m)</th></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const NODES = { A:0, C:1, D:5, E:6, F:7, B:8, G:9 };
+const L_AG = 9;
+const LOADS = { q:4, P_E:20, M_F:12, P_G:20 };
+const FyA = 14, FyB = 42;
+
+function momentAt(x) {
+  if (x <= 0) return 0;
+  if (x <= 1) return FyA * x;
+  if (x <= 5) return FyA * x - LOADS.q * (x - 1) * (x - 1) / 2;
+  if (x <= 6) { const MD = momentAt(5); return MD + (FyA - LOADS.q * 4) * (x - 5); }
+  if (x <= 7) { const ME = momentAt(6); return ME + (FyA - LOADS.q * 4 - LOADS.P_E) * (x - 6); }
+  if (x <= 8) {
+    const MFl = momentAt(7);
+    const MFr = MFl - LOADS.M_F;
+    return MFr + (FyA - LOADS.q * 4 - LOADS.P_E) * (x - 7);
+  }
+  if (x <= 9) return -LOADS.P_G * (9 - x);
+  return 0;
+}
+
+const CS = [
+  { id:'A', x:0, M:0 },
+  { id:'C', x:1, M:14 },
+  { id:'D', x:5, M:38 },
+  { id:'E', x:6, M:36 },
+  { id:'F', x:7, M:14 },
+  { id:'B', x:8, M:-20 },
+  { id:'G', x:9, M:0 },
+];
+
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W=0, H=0, SCALE=55, beamY=0, beamX0=0;
+let solvedCount = 0;  // number of permanently saved sections
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  canvas.width = w*dpr; canvas.height = h*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  W=w; H=h;
+  SCALE = Math.min(62, Math.max(38, (W-200)/L_AG));
+  beamY = H*0.55;
+  beamX0 = (W - L_AG*SCALE)/2;
+}
+window.addEventListener('resize', resize); resize();
+function toSx(xm) { return beamX0 + xm*SCALE; }
+
+function drawGrid() {
+  ctx.lineWidth=1; ctx.strokeStyle='#1c2230'; ctx.beginPath();
+  for (let x=beamX0%SCALE;x<W;x+=SCALE){ctx.moveTo(x,0);ctx.lineTo(x,H);}
+  for (let y=0;y<H;y+=30){ctx.moveTo(0,y);ctx.lineTo(W,y);}
+  ctx.stroke();
+}
+
+function drawArrow(x,y,dx,dy,len,color,label,lw) {
+  const ex=x+dx*len, ey=y+dy*len;
+  ctx.save();
+  ctx.strokeStyle=color; ctx.fillStyle=color;
+  ctx.lineWidth=lw||2.5; ctx.shadowColor=color; ctx.shadowBlur=3;
+  ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(ex,ey); ctx.stroke();
+  const ang=Math.atan2(dy,dx), ah=8;
+  ctx.beginPath(); ctx.moveTo(ex,ey);
+  ctx.lineTo(ex-ah*Math.cos(ang-0.4),ey-ah*Math.sin(ang-0.4));
+  ctx.lineTo(ex-ah*Math.cos(ang+0.4),ey-ah*Math.sin(ang+0.4));
+  ctx.closePath(); ctx.fill();
+  if(label){ctx.shadowBlur=0;ctx.font='bold 11px "Consolas",monospace';ctx.textAlign='center';ctx.fillText(label,ex+dx*16,ey+dy*16+3);}
+  ctx.restore();
+}
+
+function drawBeamFull(beamH, alpha, opts) {
+  ctx.save(); ctx.globalAlpha=alpha!==undefined?alpha:1;
+  const sx0=toSx(0), sx1=toSx(L_AG);
+  const grd=ctx.createLinearGradient(0,beamY-beamH/2,0,beamY+beamH/2);
+  grd.addColorStop(0,'#30363d'); grd.addColorStop(0.5,'#484f58'); grd.addColorStop(1,'#30363d');
+  ctx.fillStyle=grd; ctx.fillRect(sx0,beamY-beamH/2,(sx1-sx0),beamH);
+  ctx.strokeStyle='#58a6ff'; ctx.lineWidth=1.5;
+  ctx.strokeRect(sx0,beamY-beamH/2,(sx1-sx0),beamH);
+  const skipLabels = opts && opts.skipLabels;
+  if(!skipLabels){
+    ctx.font='bold 11px "Segoe UI"'; ctx.fillStyle='#c9d1d9'; ctx.textAlign='center';
+    for(const k in NODES){ctx.fillText(k,toSx(NODES[k]),beamY-beamH/2-10);}
+  }
+  ctx.restore();
+}
+
+function drawSupport(x,type,alpha) {
+  const sx=toSx(x), sy=beamY+6;
+  ctx.save(); ctx.globalAlpha=alpha!==undefined?alpha:1;
+  ctx.fillStyle='#58a6ff';
+  ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx-11,sy+17); ctx.lineTo(sx+11,sy+17); ctx.closePath(); ctx.fill();
+  if(type==='roller'){ctx.beginPath();ctx.arc(sx-6,sy+20,3.5,0,Math.PI*2);ctx.arc(sx+6,sy+20,3.5,0,Math.PI*2);ctx.fill();ctx.fillRect(sx-16,sy+25,32,3);}
+  else{ctx.fillRect(sx-16,sy+19,32,3);}
+  ctx.fillStyle='#0d1117'; ctx.beginPath(); ctx.arc(sx,sy+1,3,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#58a6ff'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.restore();
+}
+
+function drawUDL(x0,x1,alpha){
+  ctx.save(); ctx.globalAlpha=alpha||1;
+  const s0=toSx(x0), s1=toSx(x1);
+  const cnt=Math.max(6,Math.floor((s1-s0)/14)), sp=(s1-s0)/cnt;
+  ctx.strokeStyle='#ffd700'; ctx.lineWidth=2.5;
+  ctx.shadowColor='#ffd700'; ctx.shadowBlur=3;
+  ctx.beginPath(); ctx.moveTo(s0,beamY-32); ctx.lineTo(s1,beamY-32); ctx.stroke();
+  for(let i=0;i<=cnt;i++) drawArrow(s0+i*sp,beamY-32,0,1,18,'#ffd700',null,1.8);
+  ctx.shadowBlur=0;
+  ctx.font='bold 12px "Consolas",monospace'; ctx.fillStyle='#ffd700'; ctx.textAlign='center';
+  ctx.fillText('q = 4 kN/m',(s0+s1)/2,beamY-44);
+  ctx.font='9.5px "Consolas",monospace'; ctx.fillStyle='#8b949e';
+  ctx.fillText('4m',(s0+s1)/2,beamY-56);
+  ctx.restore();
+}
+
+function drawPL(x,val,alpha){
+  ctx.save(); ctx.globalAlpha=alpha||1;
+  const sx=toSx(x);
+  drawArrow(sx,beamY-28,0,1,26+val*1.3,'#f85149',null,2.6);
+  ctx.font='bold 12px "Consolas",monospace'; ctx.fillStyle='#f85149'; ctx.textAlign='center';
+  ctx.shadowColor='#f85149'; ctx.shadowBlur=5;
+  ctx.fillText('\u2193 '+val+' kN',sx,beamY-40);
+  ctx.shadowBlur=0;
+  ctx.restore();
+}
+
+function drawCouple(x,dir,alpha){
+  ctx.save(); ctx.globalAlpha=alpha||1;
+  const sx=toSx(x), cy=beamY-24, r=13;
+  ctx.strokeStyle='#a371f7'; ctx.fillStyle='#a371f7'; ctx.lineWidth=2.5;
+  ctx.shadowColor='#a371f7'; ctx.shadowBlur=6;
+  const sa=dir>0?Math.PI*0.15:Math.PI*0.85, ea=dir>0?Math.PI*0.85:Math.PI*0.15;
+  ctx.beginPath(); ctx.arc(sx,cy,r,sa,ea,dir>0); ctx.stroke();
+  const ax=sx+r*Math.cos(ea), ay=cy+r*Math.sin(ea);
+  const tang=dir>0?ea+Math.PI/2:ea-Math.PI/2, ah=7;
+  ctx.beginPath(); ctx.moveTo(ax,ay);
+  ctx.lineTo(ax-ah*Math.cos(tang-0.4),ay-ah*Math.sin(tang-0.4));
+  ctx.lineTo(ax-ah*Math.cos(tang+0.4),ay-ah*Math.sin(tang+0.4));
+  ctx.closePath(); ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.font='bold 11px "Consolas",monospace'; ctx.fillStyle='#a371f7'; ctx.textAlign='center';
+  ctx.fillText('12 kN·m \u21ba',sx,cy-r-4);
+  ctx.restore();
+}
+
+function drawReaction(x,val,label,color,alpha){
+  ctx.save(); ctx.globalAlpha=alpha||1;
+  drawArrow(toSx(x),beamY+30,0,-1,22+Math.abs(val)*1.8,color,label+'='+val+'kN',2.6);
+  ctx.restore();
+}
+
+function drawDims(){
+  const dy=beamY+38;
+  function d(sx0,sx1,label){
+    ctx.save(); ctx.strokeStyle='#6e7681'; ctx.lineWidth=0.8;
+    ctx.beginPath(); ctx.moveTo(sx0,dy-3);ctx.lineTo(sx0,dy+3);ctx.moveTo(sx1,dy-3);ctx.lineTo(sx1,dy+3);ctx.stroke();
+    ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(sx0,dy);ctx.lineTo(sx1,dy); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font='9.5px "Consolas",monospace'; ctx.fillStyle='#8b949e'; ctx.textAlign='center';
+    ctx.fillText(label,(sx0+sx1)/2,dy-4); ctx.restore();
+  }
+  d(toSx(0),toSx(1),'1m'); d(toSx(1),toSx(5),'4m'); d(toSx(6),toSx(7),'1m');
+  d(toSx(7),toSx(8),'1m'); d(toSx(8),toSx(9),'1m');
+}
+
+function drawLoads(alpha){ drawUDL(1,5,alpha); drawPL(6,20,alpha); drawCouple(7,1,alpha); drawPL(9,20,alpha); }
+function drawReactions(alpha){ drawReaction(0,FyA,'FyA','#3fb950',alpha); drawReaction(8,FyB,'FyB','#3fb950',alpha); }
+
+const M_SCALE=2.2;
+function drawMomentDiagram(progress,color){
+  ctx.save();
+  const N=300, pts=[];
+  for(let i=0;i<=N;i++){const x=(i/N)*L_AG;pts.push({x,M:momentAt(x)});}
+  const drawN=Math.floor(progress*N);
+  if(drawN<2){ctx.restore();return;}
+  // Fill area between beam and M curve (positive→below, negative→above)
+  ctx.beginPath(); ctx.moveTo(pts[0].sx||toSx(pts[0].x),beamY);
+  for(let i=0;i<=drawN;i++){const p=pts[i];ctx.lineTo(toSx(p.x),beamY+p.M*M_SCALE);}
+  ctx.lineTo(toSx(pts[drawN].x),beamY); ctx.closePath();
+  ctx.fillStyle=color+'15'; ctx.fill();
+  ctx.save(); ctx.clip();
+  ctx.strokeStyle=color+'30'; ctx.lineWidth=0.8;
+  for(let x=toSx(0)-200;x<toSx(9)+200;x+=7){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+400,H);ctx.stroke();}
+  ctx.restore();
+  // M curve outline
+  ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=2.8;
+  ctx.shadowColor=color; ctx.shadowBlur=5;
+  ctx.beginPath();
+  for(let i=0;i<=drawN;i++){const p=pts[i];const sx=toSx(p.x),sy=beamY+p.M*M_SCALE;if(i===0)ctx.moveTo(sx,sy);else ctx.lineTo(sx,sy);}
+  ctx.stroke(); ctx.shadowBlur=0;
+  // Key point labels
+  if(progress>=1){
+    ctx.font='bold 10.5px "Consolas",monospace'; ctx.textAlign='center';
+    const kps=[{x:1,M:14,l:'14'},{x:5,M:38,l:'38'},{x:4.5,M:38.5,l:'38.5(极值)'},{x:6,M:36,l:'36'},{x:7,M:14,l:'14'}];
+    kps.forEach(p=>{const s=toSx(p.x),y=beamY+p.M*M_SCALE;ctx.fillStyle=color;ctx.fillText(p.l,s,y+(p.M>=0?14:-8));});
+    const MFr=momentAt(7.001);
+    ctx.fillStyle='#3fb950'; ctx.fillText('2',toSx(7.02),beamY+MFr*M_SCALE+(MFr>=0?14:-8));
+    const MB=momentAt(8);
+    ctx.fillStyle='#f85149'; ctx.fillText(MB.toFixed(0),toSx(8),beamY+MB*M_SCALE+(MB>=0?14:-8));
+  }
+  if(progress>=0.3){
+    ctx.font='bold 11px "Segoe UI"'; ctx.fillStyle=color; ctx.textAlign='left';
+    ctx.fillText('弯矩图 M(x)',toSx(0)+8,beamY-125);
+    ctx.font='9.5px "Segoe UI"'; ctx.fillStyle='#8b949e';
+    ctx.fillText('(正→下侧受拉 画下方 · 负→上侧受拉 画上方)',toSx(0)+8,beamY-138);
+  }
+  ctx.restore();
+}
+
+// Draw a free-body mini-diagram (scaled into a mini canvas)
+function drawMiniFBD(mc, sec) {
+  const rect = mc.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = Math.floor(rect.width), ch = Math.floor(rect.height);
+  mc.width = cw*dpr; mc.height = ch*dpr;
+  const mctx = mc.getContext('2d');
+  mctx.setTransform(dpr,0,0,dpr,0,0);
+  mctx.clearRect(0,0,cw,ch);
+  mctx.fillStyle = '#0d1117';
+  mctx.fillRect(0,0,cw,ch);
+  // compute scale
+  const scale = Math.min(40, (cw - 50)/Math.max(0.5,sec.x));
+  const mx0 = 20, my0 = ch*0.55;
+  const toMX = (x) => mx0 + x*scale;
+  const bh = 8;
+  // beam
+  const endX = sec.x>0?toMX(sec.x):mx0+10;
+  const grd=mctx.createLinearGradient(0,my0-bh/2,0,my0+bh/2);
+  grd.addColorStop(0,'#30363d');grd.addColorStop(0.5,'#484f58');grd.addColorStop(1,'#30363d');
+  mctx.fillStyle=grd;
+  if(sec.x>0) mctx.fillRect(mx0,my0-bh/2,endX-mx0,bh);
+  else {mctx.fillRect(mx0,my0-bh/2,14,bh);}
+  mctx.strokeStyle='#58a6ff'; mctx.lineWidth=1.2;
+  if(sec.x>0) mctx.strokeRect(mx0,my0-bh/2,endX-mx0,bh);
+  else mctx.strokeRect(mx0,my0-bh/2,14,bh);
+  // section cut
+  if(sec.x>0){
+    mctx.strokeStyle='#ffd700'; mctx.lineWidth=1.5; mctx.shadowColor='#ffd700'; mctx.shadowBlur=3;
+    mctx.beginPath(); for(let y=-10;y<=10;y+=0.5){const px=endX+Math.sin(y*0.8)*2.5,py=my0+y;if(y==-10)mctx.moveTo(px,py);else mctx.lineTo(px,py);} mctx.stroke();
+    mctx.shadowBlur=0;
+  }
+  // support A
+  const sxA=mx0, syA=my0+4;
+  mctx.fillStyle='#58a6ff';
+  mctx.beginPath(); mctx.moveTo(sxA,syA);mctx.lineTo(sxA-6,syA+10);mctx.lineTo(sxA+6,syA+10);mctx.closePath();mctx.fill();
+  // FyA arrow
+  if(sec.x>0){
+    const alen=14+FyA*0.5;
+    mctx.strokeStyle='#3fb950'; mctx.fillStyle='#3fb950';
+    mctx.lineWidth=1.8; mctx.shadowColor='#3fb950'; mctx.shadowBlur=2;
+    mctx.beginPath(); mctx.moveTo(sxA,my0+alen+8); mctx.lineTo(sxA,my0+8); mctx.stroke();
+    const ah=5;
+    mctx.beginPath(); mctx.moveTo(sxA,my0+8);
+    mctx.lineTo(sxA-ah*Math.cos(-Math.PI/2-0.4),my0+8-ah*Math.sin(-Math.PI/2-0.4));
+    mctx.lineTo(sxA-ah*Math.cos(-Math.PI/2+0.4),my0+8-ah*Math.sin(-Math.PI/2+0.4));
+    mctx.closePath(); mctx.fill();
+    mctx.shadowBlur=0;
+    mctx.font='bold 8.5px "Consolas",monospace'; mctx.fillStyle='#3fb950'; mctx.textAlign='left';
+    mctx.fillText('FyA=14',sxA+5,my0+alen+5);
+  }
+  // UDL
+  const ue=Math.min(5,sec.x);
+  if(sec.x>=1){
+    const u0=toMX(1),u1=toMX(ue);
+    mctx.strokeStyle='#ffd700'; mctx.lineWidth=1.5;
+    mctx.beginPath(); mctx.moveTo(u0,my0-18); mctx.lineTo(u1,my0-18); mctx.stroke();
+    const nc=Math.max(3,Math.floor((u1-u0)/10)), sp2=(u1-u0)/nc;
+    for(let i=0;i<=nc;i++){const xi=u0+i*sp2;mctx.beginPath();mctx.moveTo(xi,my0-18);mctx.lineTo(xi,my0-bh/2-1);mctx.stroke();}
+  }
+  // P_E
+  if(sec.x>=6){const px=toMX(6);mctx.strokeStyle='#f85149';mctx.lineWidth=1.8;mctx.beginPath();mctx.moveTo(px,my0-28);mctx.lineTo(px,my0-bh/2-1);mctx.stroke();const ah=4.5;mctx.beginPath();mctx.moveTo(px,my0-bh/2-1);mctx.lineTo(px-ah*Math.cos(Math.PI/2-0.4),my0-bh/2-1-ah*Math.sin(Math.PI/2-0.4));mctx.lineTo(px-ah*Math.cos(Math.PI/2+0.4),my0-bh/2-1-ah*Math.sin(Math.PI/2+0.4));mctx.closePath();mctx.fillStyle='#f85149';mctx.fill();}
+  // Couple
+  if(sec.x>=7){const cx=toMX(7),cy=my0-20,r=7;mctx.strokeStyle='#a371f7';mctx.lineWidth=1.4;mctx.beginPath();mctx.arc(cx,cy,r,Math.PI*0.2,Math.PI*0.8,false);mctx.stroke();}
+  // P_G
+  if(sec.x>=9){const px=toMX(9);mctx.strokeStyle='#f85149';mctx.lineWidth=1.8;mctx.beginPath();mctx.moveTo(px,my0-28);mctx.lineTo(px,my0-bh/2-1);mctx.stroke();}
+  // section label
+  mctx.font='bold 9.5px "Segoe UI"'; mctx.fillStyle='#ffd700'; mctx.textAlign='center';
+  if(sec.x>0) mctx.fillText('截面'+sec.id+'(x='+sec.x+'m)', (mx0+endX)/2, ch-4);
+  else mctx.fillText('截面A(自由端)', cw/2, ch-4);
+}
+
+function addSolvedCard(sec, idx) {
+  const card = document.createElement('div');
+  card.className = 'solved-card';
+  card.dataset.idx = idx;
+  const eq = getEquation(sec);
+  const resClass = sec.M>=0 ? 'res' : 'res neg';
+  const sign = sec.M>=0?'+':'';
+  card.innerHTML = `
+    <div class="hdr">
+      <span class="idx">#${idx+1}</span>
+      <span class="sec">截面 ${sec.id}</span>
+      <span class="mx">x = ${sec.x} m</span>
+    </div>
+    <canvas class="mini-canvas"></canvas>
+    <div class="eq">${eq}</div>
+    <div class="${resClass}">M_${sec.id} = ${sign}${sec.M} kN·m</div>
+  `;
+  document.getElementById('solved-cards').appendChild(card);
+  // draw the mini canvas
+  requestAnimationFrame(()=>{
+    const mc = card.querySelector('.mini-canvas');
+    if(mc) drawMiniFBD(mc, sec);
+  });
+  // scroll to bottom
+  const area = document.getElementById('solved-area');
+  area.scrollTo({ top: area.scrollHeight, behavior:'smooth' });
+  solvedCount = idx+1;
+}
+
+function clearSolvedCards() {
+  document.getElementById('solved-cards').innerHTML = '';
+  solvedCount = 0;
+}
+
+function highlightCurrentCard(idx) {
+  document.querySelectorAll('.solved-card').forEach((c,i)=>{
+    c.classList.toggle('current', i===idx);
+  });
+}
+
+function getEquation(sec){
+  const x=sec.x, M=sec.M;
+  if(x===0) return 'M_A = 0  (自由端无外力矩)';
+  if(x===1) return 'M_C = FyA × 1 = 14 kN·m';
+  if(x===5) return 'M_D = 14×5 − 4×4×2 = 70−32 = 38';
+  if(x===6) return 'M_E = 38 + (−2)×1 = 36 kN·m';
+  if(x===7) return 'M_F左 = 36 + (−22)×1 = 14';
+  if(x===8) return 'M_F右 = 14−12 = 2, M_B = 2+(−22)×1 = −20';
+  if(x===9) return 'M_G = 0  (自由端)';
+  return '';
+}
+
+// Phase state
+let phase=0, phaseProgress=0, playing=false, paused=false, lastTime=0, holdTime=0;
+let solveIdx=0, solvePhase=0, solveProg=0;
+
+// Speed scale: larger values -> slower
+const SPEED_SCALE = 1.3;
+
+const HINTS=[
+  {label:'① 原结构',text:'伸臂梁 ABCDEFG 承受均布荷载、集中力和集中力偶，结构尺寸与荷载如图所示。'},
+  {label:'② 求反力',text:'ΣM_B=0 → F_yA=14kN↑，ΣF_y=0 → F_yB=42kN↑'},
+  {label:'③ 切截面',text:'在A、C、D、E、F、B、G各控制截面处依次切开，截面隔离体将保存在下方列表。'},
+  {label:'④ 求弯矩',text:'逐个截面：切开→取左侧隔离体→标注力臂→列ΣM=0→求解M值，结果存入卡片。'},
+  {label:'⑤ 画M图',text:'根据求得的各截面弯矩，逐点描图绘制完整弯矩图M(x)，下方卡片保留作为参考。'},
+];
+
+function drawMomentSymbol(x, y, M, label, alpha, size) {
+  if (alpha <= 0) return;
+  const r = size || 14;
+  const color = M >= 0 ? '#3fb950' : '#f85149';
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2.2;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 4;
+  // Arc: positive M -> clockwise (↻), negative M -> counter-clockwise (↺)
+  // Draw a ~270° arc starting from top
+  const startAng = -Math.PI / 2;
+  const arcSpan = Math.PI * 1.5; // 270 degrees
+  const dir = M >= 0 ? false : true; // false=clockwise(↻), true=counter-clockwise(↺)
+  ctx.beginPath();
+  ctx.arc(x, y, r, startAng, startAng + arcSpan, dir);
+  ctx.stroke();
+  // Arrowhead at the end of the arc
+  const endAng = startAng + arcSpan;
+  const ax = x + r * Math.cos(endAng);
+  const ay = y + r * Math.sin(endAng);
+  const tangAng = M >= 0 ? endAng + Math.PI / 2 : endAng - Math.PI / 2;
+  const ah = 6;
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(ax - ah * Math.cos(tangAng - 0.45), ay - ah * Math.sin(tangAng - 0.45));
+  ctx.lineTo(ax - ah * Math.cos(tangAng + 0.45), ay - ah * Math.sin(tangAng + 0.45));
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // Label: M_X = value
+  ctx.font = 'bold 10px "Consolas",monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const sign = M >= 0 ? '' : '';  // sign already in value
+  const txt = label + '=' + M;
+  const tw = ctx.measureText(txt).width;
+  const pad = 3;
+  // Label background
+  ctx.fillStyle = 'rgba(22,27,34,0.9)';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x - tw / 2 - pad, y + r + 4, tw + pad * 2, 14, 4);
+  ctx.fill();
+  ctx.stroke();
+  // Label text
+  ctx.fillStyle = color;
+  ctx.fillText(txt, x, y + r + 11);
+  ctx.restore();
+}
+
+function drawCutTraces(upToIdx) {
+  if (upToIdx < 0) return;
+  ctx.save();
+  for (let i = 0; i <= upToIdx && i < CS.length; i++) {
+    const sec = CS[i], sx = toSx(sec.x);
+    // dashed cut line
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 1.6;
+    ctx.globalAlpha = 0.45;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(sx, beamY - 72);
+    ctx.lineTo(sx, beamY + 48);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // label background pill
+    ctx.globalAlpha = 0.85;
+    const lbl = sec.id;
+    ctx.font = 'bold 10px "Segoe UI"';
+    const tw = ctx.measureText(lbl).width;
+    const pad = 4;
+    const pillW = tw + pad * 2;
+    const pillH = 14;
+    const pillX = sx - pillW / 2;
+    const pillY = beamY - 88;
+    ctx.fillStyle = '#161b22';
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, 7);
+    ctx.fill();
+    ctx.stroke();
+    // label text
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffd700';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lbl, sx, pillY + pillH / 2 + 1);
+    // Moment symbol at the cut on the beam
+    drawMomentSymbol(sx, beamY, sec.M, 'M_' + sec.id, 0.8, 12);
+  }
+  ctx.restore();
+}
+
+function render(){
+  ctx.clearRect(0,0,W,H); drawGrid();
+  if(phase===0){ drawBeamFull(12); drawSupport(0,'pin'); drawSupport(8,'roller'); drawDims(); drawLoads(1); }
+  else if(phase===1){ drawBeamFull(12); drawSupport(0,'pin'); drawSupport(8,'roller'); drawDims(); drawLoads(0.35); drawReactions(phaseProgress);
+    if(phaseProgress>0.5){const ep=Math.min(1,(phaseProgress-0.5)*2);ctx.save();ctx.globalAlpha=ep;const bw=400,bh=100,bx=(W-bw)/2,by=H-120;ctx.fillStyle='rgba(22,27,34,0.95)';ctx.strokeStyle='#3fb950';ctx.lineWidth=1.5;ctx.beginPath();ctx.roundRect(bx,by,bw,bh,8);ctx.fill();ctx.stroke();ctx.font='bold 11px "Segoe UI"';ctx.fillStyle='#3fb950';ctx.textAlign='left';ctx.fillText('① 求支座反力',bx+12,by+18);ctx.font='10.5px "Consolas",monospace';ctx.fillStyle='#c9d1d9';ctx.fillText('ΣM_B=0:  F_yA×8 − 4×4×5 − 20×2 − 12 + 20×1 = 0',bx+12,by+38);ctx.fillStyle='#3fb950';ctx.fontWeight='700';ctx.fillText('F_yA = 14 kN ↑',bx+14,by+57);ctx.fillStyle='#c9d1d9';ctx.fontWeight='400';ctx.fillText('ΣF_y=0:  14 + F_yB − 16 − 20 − 20 = 0',bx+14,by+76);ctx.fillStyle='#3fb950';ctx.fontWeight='700';ctx.fillText('F_yB = 42 kN ↑',bx+220,by+57);ctx.restore();}
+  }
+  else if(phase===2){ drawBeamFull(12); drawSupport(0,'pin'); drawSupport(8,'roller'); drawDims(); drawLoads(0.5); drawReactions(0.5);
+    for(let i=0;i<CS.length;i++){const thresh=i/CS.length;if(phaseProgress>=thresh){const sp=Math.min(1,(phaseProgress-thresh)*CS.length*1.5);const sec=CS[i],sx=toSx(sec.x);ctx.save();ctx.globalAlpha=sp;ctx.strokeStyle='#ffd700';ctx.lineWidth=2.5;ctx.shadowColor='#ffd700';ctx.shadowBlur=8;ctx.setLineDash([5,3]);ctx.beginPath();ctx.moveTo(sx,beamY-70);ctx.lineTo(sx,beamY+50);ctx.stroke();ctx.setLineDash([]);ctx.shadowBlur=0;ctx.font='bold 11px "Segoe UI"';ctx.fillStyle='#ffd700';ctx.textAlign='center';ctx.fillText('截面'+sec.id,sx,beamY-77);ctx.restore();}}
+    // After all sections cut, overlay permanent traces for smooth transition
+    if(phaseProgress > 0.85) {
+      const fadeIn = Math.min(1, (phaseProgress - 0.85) / 0.15);
+      ctx.save(); ctx.globalAlpha = fadeIn;
+      drawCutTraces(CS.length - 1);
+      ctx.restore();
+    }
+    if(phaseProgress>0.9){const zp=Math.min(1,(phaseProgress-0.9)*10);ctx.save();ctx.globalAlpha=zp;ctx.fillStyle='rgba(63,185,80,0.15)';ctx.fillRect(toSx(4.3),beamY-28,toSx(4.7)-toSx(4.3),56);ctx.strokeStyle='#3fb950';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(toSx(4.5),beamY-72);ctx.lineTo(toSx(4.5),beamY+50);ctx.stroke();ctx.setLineDash([]);ctx.font='bold 10px "Segoe UI"';ctx.fillStyle='#3fb950';ctx.textAlign='center';ctx.fillText('剪力Q=0处(x≈4.5m)',toSx(4.5),beamY-80);ctx.restore();}
+  }
+  else if(phase===3){
+    // Main beam always visible at top (skip labels - traces provide them)
+    drawBeamFull(12, 1, {skipLabels: true});
+    drawSupport(0,'pin'); drawSupport(8,'roller');
+    drawDims();
+    // dim loads & reactions
+    ctx.save(); ctx.globalAlpha=0.28; drawLoads(1); drawReactions(1); ctx.restore();
+    // section animation
+    const total=CS.length, secProg=phaseProgress*total;
+    solveIdx=Math.min(total-1,Math.floor(secProg));
+    const lp=secProg-solveIdx;
+    if(lp<0.35){solvePhase=0;solveProg=lp/0.35;}
+    else if(lp<0.7){solvePhase=1;solveProg=(lp-0.35)/0.35;}
+    else{solvePhase=2;solveProg=(lp-0.7)/0.3;}
+    // Ensure solved cards up to previous section are rendered
+    for(let i=solvedCount;i<solveIdx;i++){addSolvedCard(CS[i],i);}
+    // Draw permanent traces for all completed (past) sections
+    drawCutTraces(solveIdx - 1);
+    highlightCurrentCard(solveIdx);
+    drawSolveSectionOnMain(solveIdx, solvePhase, solveProg);
+    // If we finished the last section and progression is done
+    if(solveIdx===total-1 && solvePhase===2 && solveProg>=1 && solvedCount<total){
+      addSolvedCard(CS[solveIdx], solveIdx);
+    }
+  }
+  else if(phase===4){
+    // Ensure all cards added
+    for(let i=solvedCount;i<CS.length;i++) addSolvedCard(CS[i],i);
+    highlightCurrentCard(-1);
+    drawBeamFull(12, 1, {skipLabels: true}); drawSupport(0,'pin'); drawSupport(8,'roller'); drawDims(); drawLoads(0.35); drawReactions(0.5);
+    // Permanent cut traces for all 7 sections
+    drawCutTraces(CS.length - 1);
+    drawMomentDiagram(phaseProgress,'#ffd700');
+  }
+  updateUI();
+}
+
+// Draw solve animation overlay on the upper main beam area
+function drawSolveSectionOnMain(secIdx, sph, prog){
+  const sec=CS[secIdx]; if(!sec) return;
+  const cutX=sec.x, sx=toSx(cutX);
+  const by = beamY;
+  
+  if(sph===0){
+    const cp=prog;
+    // Cutting line animation
+    ctx.save();
+    ctx.globalAlpha=0.5+cp*0.5;
+    ctx.strokeStyle='#ffd700'; ctx.lineWidth=3; ctx.setLineDash([8,5]);
+    ctx.shadowColor='#ffd700'; ctx.shadowBlur=10;
+    ctx.beginPath(); ctx.moveTo(sx,by-70); ctx.lineTo(sx,by+50); ctx.stroke();
+    ctx.setLineDash([]); ctx.shadowBlur=0;
+    // Pulsing highlight
+    const pulse = 0.4+0.6*Math.abs(Math.sin(performance.now()/200));
+    ctx.globalAlpha=cp*0.5*pulse;
+    ctx.fillStyle='#ffd700';
+    ctx.fillRect(sx-4,by-14,8,28);
+    ctx.globalAlpha=1;
+    ctx.font='bold 13px "Segoe UI"'; ctx.fillStyle='#ffd700'; ctx.textAlign='center';
+    ctx.fillText('切 · 截面 '+sec.id,sx,by-82);
+    ctx.font='10.5px "Consolas",monospace'; ctx.fillStyle='#8b949e';
+    ctx.fillText('x = '+cutX+'m',sx,by-68);
+    ctx.restore();
+  } else {
+    // sph >= 1: section is cut
+    const mainAlpha = sph === 1 ? Math.min(1, prog * 1.5) : 1;
+    
+    // === STEP 1: Create isolation effect on main beam ===
+    // First, erase the right portion (removed part) with background color
+    const eraseH = 36;
+    ctx.save(); ctx.globalAlpha = mainAlpha;
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(sx-2, by-18, toSx(L_AG)-sx+20, eraseH);
+    ctx.restore();
+    
+    // Draw faded/removed right portion (ghost)
+    ctx.save(); ctx.globalAlpha = 0.2 * mainAlpha;
+    const rgrd = ctx.createLinearGradient(0,by-12,0,by+12);
+    rgrd.addColorStop(0,'#21262d'); rgrd.addColorStop(0.5,'#30363d'); rgrd.addColorStop(1,'#21262d');
+    ctx.fillStyle = rgrd;
+    ctx.fillRect(sx, by-12, toSx(L_AG)-sx, 24);
+    ctx.strokeStyle='#30363d'; ctx.lineWidth=1;
+    ctx.strokeRect(sx, by-12, toSx(L_AG)-sx, 24);
+    // Ghost loads on removed portion
+    ctx.globalAlpha = 0.15 * mainAlpha;
+    if(cutX < 5){
+      const ux1 = toSx(Math.max(1, cutX)), ux2 = toSx(5);
+      const cnt = Math.max(3, Math.floor((ux2-ux1)/14));
+      const sp = (ux2-ux1)/cnt;
+      ctx.strokeStyle='#ffd700'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(ux1,by-38); ctx.lineTo(ux2,by-38); ctx.stroke();
+      for(let i=0;i<=cnt;i++){
+        const x = ux1+i*sp;
+        ctx.beginPath(); ctx.moveTo(x,by-38); ctx.lineTo(x,by-16); ctx.stroke();
+      }
+    }
+    if(cutX < 6){
+      const px = toSx(6);
+      ctx.strokeStyle='#f85149'; ctx.lineWidth=1.8;
+      ctx.beginPath(); ctx.moveTo(px,by-44); ctx.lineTo(px,by-16); ctx.stroke();
+    }
+    if(cutX < 7){
+      const cx = toSx(7);
+      ctx.strokeStyle='#a371f7'; ctx.lineWidth=1.8;
+      ctx.beginPath(); ctx.arc(cx,by-30,12,Math.PI*0.2,Math.PI*0.8,false); ctx.stroke();
+    }
+    if(cutX < 9){
+      const px = toSx(9);
+      ctx.strokeStyle='#f85149'; ctx.lineWidth=1.8;
+      ctx.beginPath(); ctx.moveTo(px,by-44); ctx.lineTo(px,by-16); ctx.stroke();
+    }
+    ctx.restore();
+    
+    // Draw highlighted left portion (isolated body)
+    ctx.save(); ctx.globalAlpha = mainAlpha;
+    const lgrd = ctx.createLinearGradient(0,by-12,0,by+12);
+    lgrd.addColorStop(0,'#1f6feb'); lgrd.addColorStop(0.5,'#58a6ff'); lgrd.addColorStop(1,'#1f6feb');
+    ctx.fillStyle = lgrd;
+    ctx.fillRect(toSx(0), by-12, sx-toSx(0), 24);
+    ctx.strokeStyle='#79c0ff'; ctx.lineWidth=3;
+    ctx.shadowColor='#58a6ff'; ctx.shadowBlur=12;
+    ctx.strokeRect(toSx(0), by-12, sx-toSx(0), 24);
+    ctx.shadowBlur=0;
+    // Glow effect
+    ctx.strokeStyle='rgba(88,166,255,0.3)'; ctx.lineWidth=6;
+    ctx.strokeRect(toSx(0), by-12, sx-toSx(0), 24);
+    ctx.restore();
+    
+    // Highlighted supports on isolated portion
+    ctx.save(); ctx.globalAlpha = mainAlpha;
+    ctx.fillStyle='#58a6ff';
+    ctx.beginPath(); ctx.moveTo(toSx(0),by+6); ctx.lineTo(toSx(0)-11,by+23); ctx.lineTo(toSx(0)+11,by+23); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#0d1117'; ctx.beginPath(); ctx.arc(toSx(0),by+7,3.5,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#79c0ff'; ctx.lineWidth=2; ctx.stroke();
+    ctx.restore();
+    
+    // "隔离体" label on isolated portion
+    ctx.save(); ctx.globalAlpha = mainAlpha;
+    ctx.font='bold 11px "Segoe UI"'; ctx.textAlign='center';
+    const isoLabel = '隔离体 (0→'+sec.id+')';
+    const isoW = ctx.measureText(isoLabel).width + 14;
+    const isoCx = (toSx(0) + sx) / 2;
+    ctx.fillStyle='rgba(63,185,80,0.2)';
+    ctx.strokeStyle='#3fb950'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.roundRect(isoCx-isoW/2, by-54, isoW, 20, 5);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#58a6ff';
+    ctx.fillText(isoLabel, isoCx, by-40);
+    ctx.restore();
+    
+    // === STEP 2: Draw loads on isolated portion at full opacity ===
+    ctx.save(); ctx.globalAlpha = mainAlpha;
+    
+    // FyA at x=0
+    drawReaction(0, FyA, 'FyA', '#3fb950', 1);
+    
+    // UDL from 1 to min(5,cutX)
+    if(cutX >= 1){
+      const ux1 = toSx(1), ux2 = toSx(Math.min(5, cutX));
+      const cnt = Math.max(4, Math.floor((ux2-ux1)/12));
+      const sp = (ux2-ux1)/cnt;
+      ctx.strokeStyle='#ffd700'; ctx.lineWidth=2.5;
+      ctx.shadowColor='#ffd700'; ctx.shadowBlur=4;
+      ctx.beginPath(); ctx.moveTo(ux1,by-38); ctx.lineTo(ux2,by-38); ctx.stroke();
+      for(let i=0;i<=cnt;i++){
+        const x = ux1+i*sp;
+        ctx.beginPath(); ctx.moveTo(x,by-38); ctx.lineTo(x,by-14); ctx.stroke();
+        const ah=3.5, ang=Math.PI/2;
+        ctx.beginPath(); ctx.moveTo(x,by-14);
+        ctx.lineTo(x-ah*Math.cos(ang-0.4),by-14-ah*Math.sin(ang-0.4));
+        ctx.lineTo(x-ah*Math.cos(ang+0.4),by-14-ah*Math.sin(ang+0.4));
+        ctx.closePath(); ctx.fillStyle='#ffd700'; ctx.fill();
+      }
+      ctx.shadowBlur=0;
+      ctx.font='bold 11px "Consolas",monospace'; ctx.fillStyle='#ffd700'; ctx.textAlign='center';
+      ctx.fillText('q=4kN/m', (ux1+ux2)/2, by-50);
+    }
+    
+    // P_E at x=6
+    if(cutX >= 6){
+      const px = toSx(6);
+      ctx.strokeStyle='#f85149'; ctx.fillStyle='#f85149'; ctx.lineWidth=2.2;
+      ctx.shadowColor='#f85149'; ctx.shadowBlur=5;
+      ctx.beginPath(); ctx.moveTo(px,by-44); ctx.lineTo(px,by-14); ctx.stroke();
+      const ah=6, ang=Math.PI/2;
+      ctx.beginPath(); ctx.moveTo(px,by-14);
+      ctx.lineTo(px-ah*Math.cos(ang-0.4),by-14-ah*Math.sin(ang-0.4));
+      ctx.lineTo(px-ah*Math.cos(ang+0.4),by-14-ah*Math.sin(ang+0.4));
+      ctx.closePath(); ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.font='bold 12px "Consolas",monospace'; ctx.fillStyle='#ff7b72'; ctx.textAlign='center';
+      ctx.fillText('20kN', px, by-52);
+    }
+    
+    // Couple at x=7
+    if(cutX >= 7){
+      const cx = toSx(7), cy = by-30, r = 14;
+      ctx.strokeStyle='#a371f7'; ctx.fillStyle='#a371f7'; ctx.lineWidth=2.5;
+      ctx.shadowColor='#a371f7'; ctx.shadowBlur=6;
+      ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI*0.2,Math.PI*0.8,false); ctx.stroke();
+      const aEnd = Math.PI*0.8;
+      const ax = cx+r*Math.cos(aEnd), ay = cy+r*Math.sin(aEnd);
+      const tang = aEnd+Math.PI/2, ah=7;
+      ctx.beginPath(); ctx.moveTo(ax,ay);
+      ctx.lineTo(ax-ah*Math.cos(tang-0.4),ay-ah*Math.sin(tang-0.4));
+      ctx.lineTo(ax-ah*Math.cos(tang+0.4),ay-ah*Math.sin(tang+0.4));
+      ctx.closePath(); ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.font='bold 11px "Consolas",monospace'; ctx.fillStyle='#bc8cff'; ctx.textAlign='center';
+      ctx.fillText('12kN·m↺', cx, cy-r-4);
+    }
+    
+    // P_G at x=9
+    if(cutX >= 9){
+      const px = toSx(9);
+      ctx.strokeStyle='#f85149'; ctx.fillStyle='#f85149'; ctx.lineWidth=2.2;
+      ctx.shadowColor='#f85149'; ctx.shadowBlur=5;
+      ctx.beginPath(); ctx.moveTo(px,by-44); ctx.lineTo(px,by-14); ctx.stroke();
+      const ah=6, ang=Math.PI/2;
+      ctx.beginPath(); ctx.moveTo(px,by-14);
+      ctx.lineTo(px-ah*Math.cos(ang-0.4),by-14-ah*Math.sin(ang-0.4));
+      ctx.lineTo(px-ah*Math.cos(ang+0.4),by-14-ah*Math.sin(ang+0.4));
+      ctx.closePath(); ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.font='bold 12px "Consolas",monospace'; ctx.fillStyle='#ff7b72'; ctx.textAlign='center';
+      ctx.fillText('20kN', px, by-52);
+    }
+    
+    ctx.restore();
+    
+    // === STEP 3: Draw cut face at section on main beam ===
+    const cutAlpha = mainAlpha * (sph === 1 ? Math.min(1, prog * 2) : 1);
+    ctx.save(); ctx.globalAlpha = cutAlpha;
+    
+    // Extended dashed cut line
+    ctx.strokeStyle='#ffd700'; ctx.lineWidth=2.5;
+    ctx.shadowColor='#ffd700'; ctx.shadowBlur=10;
+    ctx.setLineDash([8,5]);
+    ctx.beginPath(); ctx.moveTo(sx, by-72); ctx.lineTo(sx, by+50); ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // Jagged break at beam level (cut face)
+    ctx.lineWidth=3;
+    ctx.beginPath();
+    for(let y=-16;y<=16;y+=0.5){
+      const px=sx+Math.sin(y*0.7)*3.5;
+      if(y==-16) ctx.moveTo(px,by+y);
+      else ctx.lineTo(px,by+y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur=0;
+    
+    // Hatch marks on cut face
+    ctx.lineWidth=1.2;
+    ctx.strokeStyle='#ffd700';
+    for(let h=-14;h<=14;h+=5){
+      ctx.beginPath(); ctx.moveTo(sx+3,by+h); ctx.lineTo(sx+9,by+h+3); ctx.stroke();
+    }
+    
+    // "截开面" label
+    ctx.font='bold 11px "Segoe UI"'; ctx.textAlign='left';
+    const lblTxt='截开面';
+    const lblW=ctx.measureText(lblTxt).width+10;
+    ctx.fillStyle='rgba(22,27,34,0.95)';
+    ctx.strokeStyle='#ffd700'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.roundRect(sx+8, by-22, lblW, 16, 3);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#ffd700';
+    ctx.fillText(lblTxt, sx+13, by-10);
+    
+    ctx.restore();
+    
+    // === STEP 4: Moment symbol at cut face ===
+    drawMomentSymbol(sx, by, sec.M, 'M_'+sec.id, mainAlpha*0.85, 13);
+    
+    // === STEP 5: Calculation result near section ===
+    if(sph===2 && prog > 0.2){
+      const cp = (prog - 0.2) / 0.8;
+      const resultAlpha = Math.min(1, cp * 1.5);
+      if(resultAlpha > 0){
+        ctx.save(); ctx.globalAlpha = resultAlpha;
+        
+        const ty = by + 60;
+        const sign = sec.M>=0?'+':'';
+        const txt1 = getEquation(sec);
+        const txt2 = 'M_'+sec.id+' = '+sign+sec.M+' kN·m';
+        
+        ctx.font='bold 11px "Consolas",monospace';
+        const tw = Math.max(ctx.measureText(txt1).width, ctx.measureText(txt2).width) + 30;
+        const boxX = sx - tw/2;
+        
+        ctx.fillStyle='rgba(22,27,34,0.95)';
+        ctx.strokeStyle='#ffd700'; ctx.lineWidth=1.5;
+        ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=8;
+        ctx.beginPath(); ctx.roundRect(boxX, ty-22, tw, 50, 10);
+        ctx.fill(); ctx.stroke();
+        ctx.shadowBlur=0;
+        
+        // Left accent border
+        ctx.fillStyle='#ffd700';
+        ctx.fillRect(boxX, ty-22, 3, 50);
+        
+        ctx.font='bold 10.5px "Consolas",monospace'; ctx.textAlign='center';
+        ctx.fillStyle='#8b949e';
+        ctx.fillText(txt1, sx, ty-2);
+        
+        ctx.font='bold 13px "Consolas",monospace';
+        ctx.fillStyle = sec.M>=0?'#3fb950':'#f85149';
+        ctx.shadowColor = sec.M>=0?'#3fb950':'#f85149'; ctx.shadowBlur=4;
+        ctx.fillText(txt2, sx, ty+20);
+        ctx.shadowBlur=0;
+        
+        ctx.restore();
+      }
+    }
+    
+    // === STEP 6: Small FBD card below (simplified, for reference) ===
+    const floatY = by + 140;
+    const floatX = beamX0 - 10;
+    const endX = sx + 10;
+    const fbW = endX - floatX;
+    const fbH = 64;
+    const fbdAlpha = mainAlpha * (sph >= 2 ? Math.min(1, prog * 2) : 1);
+    if(fbdAlpha > 0.05){
+      ctx.save(); ctx.globalAlpha = fbdAlpha;
+      ctx.fillStyle='rgba(13,17,23,0.88)';
+      ctx.strokeStyle='#30363d'; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.roundRect(floatX, floatY, fbW, fbH, 8);
+      ctx.fill(); ctx.stroke();
+      
+      // Mini beam segment
+      const fbdScale = (fbW - 20) / Math.max(1, cutX);
+      const fbdX0 = floatX + 10;
+      const fbdY = floatY + fbH/2 + 2;
+      const bH=8;
+      const grd=ctx.createLinearGradient(0,fbdY-bH/2,0,fbdY+bH/2);
+      grd.addColorStop(0,'#30363d');grd.addColorStop(0.5,'#484f58');grd.addColorStop(1,'#30363d');
+      ctx.fillStyle=grd; ctx.fillRect(fbdX0,fbdY-bH/2,sx-floatX-20,bH);
+      ctx.strokeStyle='#58a6ff'; ctx.lineWidth=1; ctx.strokeRect(fbdX0,fbdY-bH/2,sx-floatX-20,bH);
+      
+      // Cut face at right end
+      ctx.strokeStyle='#ffd700'; ctx.lineWidth=2;
+      ctx.beginPath();
+      for(let y=-10;y<=10;y+=0.5){
+        const px=sx+Math.sin(y*0.7)*2.5,py=fbdY+y;
+        if(y==-10)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+      }
+      ctx.stroke();
+      
+      // Mini label
+      ctx.font='bold 9px "Segoe UI"'; ctx.fillStyle='#8b949e'; ctx.textAlign='center';
+      ctx.fillText('隔离体参考', (floatX+endX)/2, floatY-4);
+      
+      ctx.restore();
+    }
+  }
+}
+
+function startPlay(){phase=0;phaseProgress=0;playing=true;paused=false;lastTime=performance.now();holdTime=0;solveIdx=0;clearSolvedCards();updateButtons();}
+function togglePause(){if(!playing)return;paused=!paused;updateButtons();if(!paused)lastTime=performance.now();}
+function nextPhase(){if(phase<4){phase++;phaseProgress=0;holdTime=0;if(phase===3){solveIdx=0;clearSolvedCards();}updateStepper();updateHint();updateButtons();}else{playing=false;paused=false;updateButtons();}}
+function resetAnim(){phase=0;phaseProgress=0;playing=false;paused=false;holdTime=0;solveIdx=0;clearSolvedCards();updateStepper();updateHint();updateButtons();}
+
+function updateButtons(){
+  const bp=document.getElementById('btn-play');
+  const bs=document.getElementById('btn-pause');
+  if(playing && !paused){bp.textContent='▶ 播放中';bp.disabled=true;bs.disabled=false;bs.textContent='⏸ 暂停';}
+  else if(playing && paused){bp.textContent='▶ 继续';bp.disabled=false;bs.textContent='⏸ 已暂停';}
+  else{bp.textContent='▶ 播放';bp.disabled=false;bs.disabled=true;bs.textContent='⏸ 暂停';}
+}
+
+function animate(now){
+  const dt=Math.min((now-lastTime)/1000,0.05); lastTime=now;
+  if(playing && !paused){
+    if(phase===0){
+      phaseProgress+=dt/SPEED_SCALE;
+      if(phaseProgress>1.8){phaseProgress=1.8;nextPhase();}
+    }
+    else if(phase===1){
+      phaseProgress+=dt/(5*SPEED_SCALE);
+      if(phaseProgress>=1){holdTime+=dt;if(holdTime>(1.8*SPEED_SCALE)){holdTime=0;nextPhase();}}
+    }
+    else if(phase===2){
+      phaseProgress+=dt/(5*SPEED_SCALE);
+      if(phaseProgress>=1){holdTime+=dt;if(holdTime>(1.5*SPEED_SCALE)){holdTime=0;nextPhase();}}
+    }
+    else if(phase===3){
+      // CS.length sections, each 3 sub-steps: cut / take / solve
+      phaseProgress+=dt/(CS.length*2.8*SPEED_SCALE);
+      if(phaseProgress>=1){
+        // ensure all cards added before advancing
+        for(let i=solvedCount;i<CS.length;i++) addSolvedCard(CS[i],i);
+        holdTime+=dt;
+        if(holdTime>(1.5*SPEED_SCALE)){holdTime=0;highlightCurrentCard(-1);nextPhase();}
+      }
+    }
+    else if(phase===4){
+      phaseProgress+=dt/(7*SPEED_SCALE);
+      if(phaseProgress>=1){phaseProgress=1;playing=false;paused=false;updateButtons();}
+    }
+  }
+  render(); requestAnimationFrame(animate);
+}
+
+function updateStepper(){document.querySelectorAll('.step-badge').forEach((el,i)=>{el.classList.remove('active','done');if(i<phase)el.classList.add('done');else if(i===phase)el.classList.add('active');});}
+function updateHint(){const h=HINTS[phase]||HINTS[0];document.getElementById('hint-box').innerHTML='<div class="label">'+h.label+'</div><div>'+h.text+'</div>';}
+function updateUI(){
+  for(let i=0;i<=4;i++){const el=document.getElementById('phase'+i+'-block');if(el)el.style.display=(phase===i)?'block':'none';}
+  if(phase>=1){document.getElementById('reaction-box').innerHTML='<span class="step">ΣM_B = 0:</span><br>F_yA × 8 − 4×4×5 − 20×2 − 12 + 20×1 = 0<br><span class="res">F_yA = 14 kN ↑</span><br><br><span class="step">ΣF_y = 0:</span><br>14 + F_yB − 16 − 20 − 20 = 0<br><span class="res">F_yB = 42 kN ↑</span>';}
+  if(phase>=2){let list='';CS.forEach(s=>{list+=s.id+'('+s.x+'m) → M='+s.M+' kN·m<br>';});document.getElementById('section-box').innerHTML=list;}
+  if(phase===3){const sec=CS[solveIdx];if(sec){const eq=getEquation(sec);document.getElementById('calc-box').innerHTML='<span class="step">当前求解: 截面 '+sec.id+' (x='+sec.x+'m)</span><br><span class="lbl">阶段:</span> '+(solvePhase===0?'切（画切割线高亮截面）':solvePhase===1?'取（绘出左侧隔离体与外力）':'标·列·解（标注力臂→ΣM=0→得解）')+'<br><span class="lbl">方法:</span> 对截面形心取矩 ΣM=0<br><span class="lbl">计算:</span> '+eq+'<br><span class="res">→ M_'+sec.id+' = '+sec.M+' kN·m</span>';const rt=document.getElementById('result-table');let h='<tr><th>截面</th><th>x(m)</th><th>M(kN·m)</th></tr>';CS.forEach((s,i)=>{const done=i<solvedCount||(i===solveIdx&&solvePhase===2&&solveProg>=1);const cls=(i===solveIdx)?'current':(s.M>0?'pos':'neg');h+='<tr><td>'+s.id+'</td><td>'+s.x+'</td><td class="'+cls+(done?'':'')+'" style="opacity:'+(done?1:0.35)+'">'+(done?s.M:'—')+'</td></tr>';});rt.innerHTML=h;}}
+  if(phase===4){const rt=document.getElementById('result-table');let h='<tr><th>截面</th><th>x(m)</th><th>M(kN·m)</th></tr>';CS.forEach(s=>{const cls=s.M>0?'pos':'neg';h+='<tr><td>'+s.id+'</td><td>'+s.x+'</td><td class="'+cls+'">'+s.M+'</td></tr>';});rt.innerHTML=h;document.getElementById('calc-box').innerHTML='<span class="step">弯矩图M(x)</span><br>各控制截面弯矩已知，逐点描图：<br>· CD段：抛物线(均布荷载)<br>· DE、EF、FB、BG段：直线<br>· F点：集中力偶引起弯矩突变<br><br><span class="res">M_max = 38.5 kN·m (x≈4.5m)</span>';}
+}
+
+document.getElementById('btn-play').addEventListener('click',()=>{
+  if(!playing){
+    if(phase>=4 && phaseProgress>=1){resetAnim();setTimeout(startPlay,100);}
+    else startPlay();
+  } else if(paused){
+    togglePause();
+  }
+});
+document.getElementById('btn-pause').addEventListener('click',()=>{togglePause();});
+document.getElementById('btn-replay').addEventListener('click',()=>{resetAnim();setTimeout(startPlay,100);});
+document.getElementById('btn-next').addEventListener('click',()=>{
+  if(phase<4){
+    if(phaseProgress<1)phaseProgress=1;
+    else nextPhase();
+    playing=false;paused=false;updateButtons();
+  }
+});
+document.querySelectorAll('.step-badge').forEach(el=>{el.addEventListener('click',()=>{
+  const newP=parseInt(el.dataset.phase);
+  phase=newP;phaseProgress=phase===3?0.05:1;playing=false;paused=false;
+  if(phase===3){solveIdx=0;clearSolvedCards();}
+  if(phase>=3){
+    // pre-populate cards for phases we've skipped past? not needed
+    if(phase>=4)for(let i=solvedCount;i<CS.length;i++)addSolvedCard(CS[i],i);
+  }
+  updateStepper();updateHint();updateButtons();
+});});
+if(!CanvasRenderingContext2D.prototype.roundRect){CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){this.beginPath();this.moveTo(x+r,y);this.arcTo(x+w,y,x+w,y+h,r);this.arcTo(x+w,y+h,x,y+h,r);this.arcTo(x,y+h,x,y,r);this.arcTo(x,y,x+w,y,r);this.closePath();};}
+updateStepper();updateHint();updateButtons();requestAnimationFrame(animate);
+</script>
+</body>
+</html>

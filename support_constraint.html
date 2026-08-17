@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>支座约束可视化 · 可动铰 / 固定铰 / 固定 / 定向滑动</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #0d1117; color: #e6edf3; overflow: hidden; }
+
+  #app { display: flex; height: 100vh; }
+
+  /* ===== 左侧 2D 画布 ===== */
+  #scene-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 50%, #1b2433 0%, #0a0e16 75%);
+  }
+  #scene { position: absolute; top:0; left:0; width:100%; height:100%; display:block; }
+
+  /* 顶部支座切换按钮 */
+  #topbar {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 6px; z-index: 10;
+    background: rgba(22,27,34,0.85); padding: 6px; border-radius: 12px;
+    border: 1px solid #30363d; backdrop-filter: blur(6px);
+  }
+  .supp-btn {
+    padding: 8px 14px; border: none; border-radius: 8px; cursor: pointer;
+    background: transparent; color: #8b949e; font-size: 13px; font-weight: 600;
+    transition: all .25s; white-space: nowrap;
+  }
+  .supp-btn.active { background: #1f6feb; color: #fff; box-shadow: 0 0 12px rgba(31,111,235,.6); }
+  .supp-btn:hover:not(.active) { color: #e6edf3; background: rgba(255,255,255,.05); }
+
+  /* DOF 信息块 */
+  #info-badge {
+    position: absolute; top: 16px; right: 16px; z-index: 10;
+    background: rgba(22,27,34,0.85); border: 1px solid #30363d;
+    padding: 12px 16px; border-radius: 12px; backdrop-filter: blur(6px);
+    min-width: 220px;
+  }
+  #info-badge .name { font-size: 14px; font-weight: 700; color: #58a6ff; margin-bottom: 8px; }
+  #info-badge .row { display:flex; justify-content:space-between; font-size: 12px; line-height: 1.9; }
+  #info-badge .k { color: #8b949e; }
+  #info-badge .v { color: #e6edf3; font-family: "Consolas", monospace; }
+  #info-badge .v.ok { color: #3fb950; }
+  #info-badge .v.no { color: #f85149; text-decoration: line-through; opacity: 0.7; }
+  #info-badge .sep { height: 1px; background: #30363d; margin: 8px 0; }
+  #info-badge .remain { text-align: center; font-size: 11px; color: #8b949e; letter-spacing: 1px; }
+  #info-badge .remain b { color: #ffd700; font-size: 18px; font-weight: 800; }
+
+  /* 实时坐标 */
+  #coord-display {
+    position: absolute; bottom: 16px; left: 16px; z-index: 10;
+    background: rgba(13,17,23,0.85); border: 1px solid #30363d;
+    padding: 12px 16px; border-radius: 10px; backdrop-filter: blur(6px);
+    font-family: "Consolas", monospace; font-size: 13px;
+    line-height: 1.8; min-width: 240px;
+  }
+  #coord-display .title { color: #c9d1d9; font-size: 12px; margin-bottom: 6px; font-family: "Segoe UI", sans-serif; letter-spacing: 1px; }
+  #coord-display .row { display: flex; justify-content: space-between; gap: 16px; }
+  #coord-display .key { color: #8b949e; }
+  #coord-display .val { font-weight: 600; }
+  #coord-display .val.x { color: #f85149; }
+  #coord-display .val.y { color: #3fb950; }
+  #coord-display .val.a { color: #ffd700; }
+  #coord-display .val.locked { color: #484f58; font-weight: 400; text-decoration: line-through; }
+
+  /* 反力图例 */
+  #legend {
+    position: absolute; bottom: 16px; right: 16px; z-index: 10;
+    background: rgba(13,17,23,0.85); border: 1px solid #30363d;
+    padding: 10px 14px; border-radius: 10px; backdrop-filter: blur(6px);
+    font-size: 11.5px; line-height: 1.8; color: #c9d1d9;
+  }
+  #legend h4 { font-size: 11px; color: #8b949e; letter-spacing: 1.5px; margin-bottom: 6px; }
+  #legend .lg-row { display: flex; align-items: center; gap: 8px; }
+  #legend .sw { width: 24px; height: 3px; border-radius: 2px; }
+
+  /* ===== 右侧控制面板 ===== */
+  #panel {
+    width: 340px; background: #161b22; border-left: 1px solid #30363d;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #panel h2 {
+    padding: 16px; font-size: 16px; color: #e6edf3;
+    border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 8px;
+  }
+  #panel h2 .dot { width: 8px; height: 8px; border-radius: 50%; background: #ff7b72; box-shadow: 0 0 8px #ff7b72; }
+  #panel-body { flex: 1; overflow-y: auto; padding: 12px 16px; }
+  #panel-body::-webkit-scrollbar { width: 6px; }
+  #panel-body::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+  .group { margin-bottom: 18px; padding: 12px; background: #0d1117; border: 1px solid #21262d; border-radius: 10px; }
+  .group-title {
+    font-size: 12px; color: #8b949e; text-transform: uppercase;
+    letter-spacing: 1.5px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .group-title .tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #30363d; color: #c9d1d9; }
+  .group-title .tag.free { background: rgba(63,185,80,0.2); color: #3fb950; }
+  .group-title .tag.lock { background: rgba(248,81,73,0.2); color: #f85149; }
+
+  .slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .slider-row:last-child { margin-bottom: 0; }
+  .slider-row .axis {
+    width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .axis-x { background: #f85149; }
+  .axis-y { background: #3fb950; }
+  .axis-a { background: #ffd700; color: #000; }
+  .slider-row.locked .axis { background: #30363d; color: #484f58; }
+  .slider-row .name { flex: 1; font-size: 13px; color: #c9d1d9; }
+  .slider-row.locked .name { color: #484f58; }
+  .slider-row input[type=range] { width: 110px; accent-color: #58a6ff; cursor: pointer; }
+  .slider-row.locked input[type=range] { accent-color: #484f58; cursor: not-allowed; opacity: 0.4; }
+  .slider-row .val { width: 56px; text-align: right; font-size: 12px; color: #8b949e; font-variant-numeric: tabular-nums; font-family: "Consolas", monospace; }
+  .slider-row.locked .val { color: #484f58; }
+  .lock-ic { font-size: 12px; }
+
+  .btn {
+    width: 100%; padding: 9px; border: none; border-radius: 8px; cursor: pointer;
+    background: #21262d; color: #c9d1d9; font-size: 13px; font-weight: 600;
+    transition: all .2s; margin-top: 6px;
+  }
+  .btn:hover { background: #30363d; color: #fff; }
+
+  .switch-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0; font-size: 13px; color: #c9d1d9;
+  }
+  .switch {
+    position: relative; width: 38px; height: 22px; background: #30363d;
+    border-radius: 11px; cursor: pointer; transition: background .2s;
+  }
+  .switch.on { background: #1f6feb; }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    background: #fff; border-radius: 50%; transition: transform .2s;
+  }
+  .switch.on::after { transform: translateX(16px); }
+
+  /* 说明 */
+  #info {
+    border-top: 1px solid #30363d; padding: 14px 16px; background: #0d1117;
+    font-size: 12px; color: #8b949e; line-height: 1.7;
+  }
+  #info b { color: #c9d1d9; }
+  #info .f { color: #58a6ff; font-family: "Consolas", monospace; }
+  #info .r { color: #ff7b72; font-weight: 600; }
+  #info ul { margin: 6px 0 0 18px; }
+  #info li { margin-bottom: 3px; }
+
+  /* 支座图示卡片 */
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 8px; }
+  .card {
+    padding: 8px 10px; border-radius: 8px;
+    background: #161b22; border: 1px solid #30363d;
+    cursor: pointer; transition: all .2s; position: relative;
+  }
+  .card:hover { border-color: #58a6ff; }
+  .card.active { border-color: #1f6feb; background: rgba(31,111,235,0.12); }
+  .card .ct { font-size: 12px; font-weight: 600; color: #c9d1d9; margin-bottom: 2px; }
+  .card.active .ct { color: #58a6ff; }
+  .card .cs { font-size: 10px; color: #6e7681; }
+  .card .dof-tag {
+    position: absolute; top: 6px; right: 8px;
+    font-size: 10px; padding: 1px 5px; border-radius: 4px;
+    background: rgba(248,81,73,0.15); color: #ff7b72; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scene-wrap">
+    <canvas id="scene"></canvas>
+
+    <div id="topbar">
+      <button class="supp-btn active" data-supp="roller">可动铰支座</button>
+      <button class="supp-btn" data-supp="pin">固定铰支座</button>
+      <button class="supp-btn" data-supp="fixed">固定支座</button>
+      <button class="supp-btn" data-supp="guided">定向滑动支座</button>
+    </div>
+
+    <div id="info-badge">
+      <div class="name" id="sb-name">可动铰支座 Roller Support</div>
+      <div class="row"><span class="k">沿 X 方向移动</span><span class="v ok" id="sb-x">✓ 自由</span></div>
+      <div class="row"><span class="k">沿 Y 方向移动</span><span class="v no" id="sb-y">✗ 约束</span></div>
+      <div class="row"><span class="k">绕点转动</span><span class="v ok" id="sb-r">✓ 自由</span></div>
+      <div class="sep"></div>
+      <div class="remain">剩余自由度 <b id="sb-dof">2</b> / 3</div>
+    </div>
+
+    <div id="coord-display">
+      <div class="title">刚体位姿（受约束影响）</div>
+      <div id="coord-body"></div>
+    </div>
+
+    <div id="legend">
+      <h4>约束反力 / 反力偶</h4>
+      <div class="lg-row"><span class="sw" style="background:#ff7b72;"></span>反力 F（限制位移）</div>
+      <div class="lg-row"><span class="sw" style="background:#a371f7;"></span>反力偶 M（限制转动）</div>
+    </div>
+  </div>
+
+  <div id="panel">
+    <h2><span class="dot"></span><span>支座约束</span></h2>
+    <div id="panel-body">
+
+      <div class="group">
+        <div class="group-title">支座类型</div>
+        <div class="card-grid" id="supp-cards">
+          <div class="card active" data-supp="roller">
+            <div class="ct">① 可动铰</div>
+            <div class="cs">Roller · 滚子支座</div>
+            <div class="dof-tag">−1</div>
+          </div>
+          <div class="card" data-supp="pin">
+            <div class="ct">② 固定铰</div>
+            <div class="cs">Pin · 铰支座</div>
+            <div class="dof-tag">−2</div>
+          </div>
+          <div class="card" data-supp="fixed">
+            <div class="ct">③ 固定支座</div>
+            <div class="cs">Fixed · 嵌固端</div>
+            <div class="dof-tag">−3</div>
+          </div>
+          <div class="card" data-supp="guided">
+            <div class="ct">④ 定向滑动</div>
+            <div class="cs">Guided · 滑移支座</div>
+            <div class="dof-tag">−2</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">平移自由度 <span class="tag" id="t-tag">部分约束</span></div>
+        <div class="slider-row" data-dof="tx">
+          <div class="axis axis-x">X</div>
+          <div class="name">沿 X 轴移动</div>
+          <input type="range" min="-6" max="6" step="0.05" value="0">
+          <div class="val">0.00</div>
+        </div>
+        <div class="slider-row" data-dof="ty">
+          <div class="axis axis-y">Y</div>
+          <div class="name">沿 Y 轴移动</div>
+          <input type="range" min="-6" max="6" step="0.05" value="0">
+          <div class="val">0.00</div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">转动自由度 <span class="tag" id="r-tag">自由</span></div>
+        <div class="slider-row" data-dof="theta">
+          <div class="axis axis-a">θ</div>
+          <div class="name">绕点转动角度</div>
+          <input type="range" min="-180" max="180" step="1" value="0">
+          <div class="val">0°</div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">显示选项</div>
+        <div class="switch-row">
+          <span>显示约束反力箭头</span>
+          <div class="switch on" id="force-switch"></div>
+        </div>
+        <div class="switch-row">
+          <span>显示自由度标记</span>
+          <div class="switch on" id="dof-marker-switch"></div>
+        </div>
+        <div class="switch-row">
+          <span>显示支座下地基</span>
+          <div class="switch on" id="ground-switch"></div>
+        </div>
+        <div class="switch-row">
+          <span>自动演示约束效果</span>
+          <div class="switch" id="auto-switch"></div>
+        </div>
+        <button class="btn" id="reset-btn">重置到平衡位置</button>
+      </div>
+
+    </div>
+
+    <div id="info">
+      <b id="info-title">可动铰支座 Roller Support</b>
+      <div style="margin-top:6px;" id="info-body"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ Canvas 初始化 ============
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, CX = 0, CY = 0;
+const SCALE = 50;
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = w; H = h; CX = W / 2; CY = H / 2 + 40;
+}
+window.addEventListener('resize', resize);
+window.addEventListener('load', resize);
+requestAnimationFrame(resize);
+
+function toScreen(x, y) { return { x: CX + x * SCALE, y: CY - y * SCALE }; }
+function toWorld(sx, sy) { return { x: (sx - CX) / SCALE, y: (CY - sy) / SCALE }; }
+
+// ============ 支座定义 ============
+// free: true  自由    → 滑块可动，反力不显示
+// free: false 约束    → 滑块锁死，显示对应反力
+// refloc: 反力施加位置（相对刚体参考点）
+const SUPPORTS = {
+  roller: {
+    name: "可动铰支座 Roller Support",
+    nameCn: "可动铰支座",
+    constraints: { tx: true,  ty: false, theta: true },
+    dofCount: 2,
+    reduce: 1,
+    info: {
+      title: "可动铰支座（Roller Support）",
+      body: `<ul>
+        <li>允许 <b>沿支撑面（X 向）</b> 移动 — 无水平反力</li>
+        <li>约束 <b>竖向（Y 向）</b> 位移 — 产生竖向反力 <span class="r">Fᵧ</span></li>
+        <li>允许 <b>转动</b> — 无反力偶</li>
+      </ul>
+      <br>反力分量：<span class="f">1 个 (Fᵧ)</span><br>
+      常用于 <b>桥梁一端</b> 以适应温度伸缩。`,
+    },
+  },
+  pin: {
+    name: "固定铰支座 Pin Support",
+    nameCn: "固定铰支座",
+    constraints: { tx: false, ty: false, theta: true },
+    dofCount: 1,
+    reduce: 2,
+    info: {
+      title: "固定铰支座（Pin Support）",
+      body: `<ul>
+        <li>约束 <b>X 向</b> 位移 — 水平反力 <span class="r">Fₓ</span></li>
+        <li>约束 <b>Y 向</b> 位移 — 竖向反力 <span class="r">Fᵧ</span></li>
+        <li>允许 <b>转动</b> — 无反力偶</li>
+      </ul>
+      <br>反力分量：<span class="f">2 个 (Fₓ, Fᵧ)</span><br>
+      典型 <b>屋架、桥梁另一端</b>、简支梁支座。`,
+    },
+  },
+  fixed: {
+    name: "固定支座 Fixed Support",
+    nameCn: "固定支座",
+    constraints: { tx: false, ty: false, theta: false },
+    dofCount: 0,
+    reduce: 3,
+    info: {
+      title: "固定支座（Fixed Support）",
+      body: `<ul>
+        <li>约束 <b>X 向</b> 位移 — 反力 <span class="r">Fₓ</span></li>
+        <li>约束 <b>Y 向</b> 位移 — 反力 <span class="r">Fᵧ</span></li>
+        <li>约束 <b>转动</b> — 反力偶 <span class="r">M</span></li>
+      </ul>
+      <br>反力分量：<span class="f">3 个 (Fₓ, Fᵧ, M)</span><br>
+      典型 <b>悬臂梁根部</b>、<b>建筑承重柱下端</b>、机械机架的固定端。`,
+    },
+  },
+  guided: {
+    name: "定向滑动支座 Guided Support",
+    nameCn: "定向滑动支座",
+    constraints: { tx: true, ty: false, theta: false },
+    dofCount: 1,
+    reduce: 2,
+    info: {
+      title: "定向滑动支座（Guided / Sliding Support）",
+      body: `<ul>
+        <li>允许 <b>沿 X 向</b> 滑动 — 无水平反力</li>
+        <li>约束 <b>竖向（Y 向）</b> 位移 — 竖向反力 <span class="r">Fᵧ</span></li>
+        <li>约束 <b>转动</b> — 反力偶 <span class="r">M</span></li>
+      </ul>
+      <br>反力分量：<span class="f">2 个 (Fᵧ, M)</span><br>
+      典型 <b>导轨滑块、桥梁伸缩缝</b> 等允许沿轴向滑动且保持姿态的结构。`,
+    },
+  },
+};
+
+// ============ 状态 ============
+let suppType = 'roller';
+let state = { tx: 0, ty: 0, theta: 0 };
+let showForce = true;
+let showDofMarker = true;
+let showGround = true;
+let autoPlay = false;
+let autoT = 0;
+
+// ============ 顶部按钮 + 卡片切换 ============
+const btnEls = document.querySelectorAll('.supp-btn, .card');
+btnEls.forEach(el => {
+  el.addEventListener('click', () => {
+    setSupport(el.dataset.supp);
+  });
+});
+
+function setSupport(type) {
+  suppType = type;
+  const def = SUPPORTS[type];
+
+  // 更新按钮 active
+  document.querySelectorAll('.supp-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.supp === type);
+  });
+  document.querySelectorAll('.card').forEach(c => {
+    c.classList.toggle('active', c.dataset.supp === type);
+  });
+
+  // 更新侧栏 DOF 徽章
+  document.getElementById('sb-name').textContent = def.name;
+  const updateBadge = (id, free) => {
+    const el = document.getElementById(id);
+    el.textContent = free ? '✓ 自由' : '✗ 约束';
+    el.className = 'v ' + (free ? 'ok' : 'no');
+  };
+  updateBadge('sb-x', def.constraints.tx);
+  updateBadge('sb-y', def.constraints.ty);
+  updateBadge('sb-r', def.constraints.theta);
+  document.getElementById('sb-dof').textContent = def.dofCount;
+
+  // 更新滑块可用性
+  applyConstraintsUI();
+
+  // 更新说明
+  document.getElementById('info-title').textContent = def.info.title;
+  document.getElementById('info-body').innerHTML = def.info.body;
+
+  // 更新分组 tag
+  const anyFreeT = def.constraints.tx || def.constraints.ty;
+  const allLockT = !def.constraints.tx && !def.constraints.ty;
+  document.getElementById('t-tag').textContent = allLockT ? '完全约束' : (anyFreeT ? '部分约束' : '自由');
+  document.getElementById('t-tag').className = 'tag ' + (allLockT ? 'lock' : (anyFreeT ? '' : 'free'));
+  document.getElementById('r-tag').textContent = def.constraints.theta ? '自由' : '约束';
+  document.getElementById('r-tag').className = 'tag ' + (def.constraints.theta ? 'free' : 'lock');
+
+  // 重置为平衡位置
+  resetState();
+}
+
+// ============ 约束同步到 UI ============
+function applyConstraintsUI() {
+  const c = SUPPORTS[suppType].constraints;
+  ['tx', 'ty', 'theta'].forEach(k => {
+    const row = document.querySelector(`.slider-row[data-dof="${k}"]`);
+    const locked = !c[k];
+    row.classList.toggle('locked', locked);
+    const input = row.querySelector('input[type=range]');
+    input.disabled = locked;
+    // 约束维度固定为 0
+    if (locked) {
+      state[k] = 0;
+      input.value = 0;
+      const v = row.querySelector('.val');
+      v.textContent = k === 'theta' ? '0°' : '0.00';
+    }
+  });
+}
+
+// ============ 滑块事件 ============
+document.querySelectorAll('input[type=range]').forEach(slider => {
+  slider.addEventListener('input', () => {
+    const row = slider.closest('.slider-row');
+    const key = row.dataset.dof;
+    state[key] = parseFloat(slider.value);
+    const valEl = row.querySelector('.val');
+    valEl.textContent = key === 'theta' ? Math.round(state[key]) + '°' : state[key].toFixed(2);
+  });
+});
+
+// ============ 开关 ============
+document.getElementById('force-switch').addEventListener('click', e => {
+  e.currentTarget.classList.toggle('on');
+  showForce = e.currentTarget.classList.contains('on');
+});
+document.getElementById('dof-marker-switch').addEventListener('click', e => {
+  e.currentTarget.classList.toggle('on');
+  showDofMarker = e.currentTarget.classList.contains('on');
+});
+document.getElementById('ground-switch').addEventListener('click', e => {
+  e.currentTarget.classList.toggle('on');
+  showGround = e.currentTarget.classList.contains('on');
+});
+document.getElementById('auto-switch').addEventListener('click', e => {
+  e.currentTarget.classList.toggle('on');
+  autoPlay = e.currentTarget.classList.contains('on');
+  if (autoPlay) autoT = 0;
+});
+document.getElementById('reset-btn').addEventListener('click', resetState);
+
+function resetState() {
+  state.tx = 0; state.ty = 0; state.theta = 0;
+  document.querySelectorAll('input[type=range]').forEach(slider => {
+    const key = slider.closest('.slider-row').dataset.dof;
+    slider.value = 0;
+    const valEl = slider.parentElement.querySelector('.val');
+    valEl.textContent = key === 'theta' ? '0°' : '0.00';
+  });
+}
+
+// ============ 绘图辅助 ============
+function drawArrow(fromX, fromY, toX, toY, color, width = 2, headLen = 10, dashed = false) {
+  const dx = toX - fromX, dy = toY - fromY;
+  const len = Math.hypot(dx, dy);
+  if (len < 2) return;
+  const ux = dx / len, uy = dy / len;
+  const hx = -uy, hy = ux;
+
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width;
+  if (dashed) ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  ctx.moveTo(fromX, fromY);
+  ctx.lineTo(toX, toY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(toX, toY);
+  ctx.lineTo(toX - ux * headLen + hx * headLen * 0.5, toY - uy * headLen + hy * headLen * 0.5);
+  ctx.lineTo(toX - ux * headLen - hx * headLen * 0.5, toY - uy * headLen - hy * headLen * 0.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// ============ 绘图：网格 + 坐标轴 ============
+function drawGrid() {
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#1c2230';
+  ctx.beginPath();
+  const step = SCALE;
+  for (let x = CX % step; x < W; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = CY % step; y < H; y += step) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+
+  ctx.strokeStyle = '#30363d';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, CY); ctx.lineTo(W, CY);
+  ctx.moveTo(CX, CY - 200); ctx.lineTo(CX, CY + 150);
+  ctx.stroke();
+
+  ctx.font = 'bold 14px "Segoe UI"';
+  ctx.fillStyle = '#f85149'; ctx.fillText('X', W - 20, CY - 8);
+  ctx.fillStyle = '#3fb950'; ctx.fillText('Y', CX + 8, CY - 192);
+}
+
+// ============ 绘图：地基（下方斜线阴影） ============
+function drawGround(y0) {
+  if (!showGround) return;
+  const y = Math.min(y0, CY + 200);
+  // 实线地面
+  ctx.strokeStyle = '#6e7681';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(CX - 260, y); ctx.lineTo(CX + 260, y);
+  ctx.stroke();
+
+  // 斜线阴影（向下，45°）
+  ctx.strokeStyle = '#484f58';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const gap = 14;
+  for (let x = CX - 260; x < CX + 260; x += gap) {
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + 12, y + 12);
+  }
+  ctx.stroke();
+}
+
+// ============ 绘图：刚体（简支梁样式，长方形） ============
+function drawBeam(cx, cy, thetaDeg, length = 280, height = 16) {
+  const theta = -thetaDeg * Math.PI / 180;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(theta);
+
+  // 梁主体（渐变填充）
+  const grad = ctx.createLinearGradient(0, -height/2, 0, height/2);
+  grad.addColorStop(0, 'rgba(88,166,255,0.65)');
+  grad.addColorStop(0.5, 'rgba(121,192,255,0.85)');
+  grad.addColorStop(1, 'rgba(31,111,235,0.65)');
+  ctx.fillStyle = grad;
+  ctx.strokeStyle = '#9ecbff';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  const r = 4;
+  const w = length, h = height;
+  ctx.moveTo(-w/2 + r, -h/2);
+  ctx.lineTo(w/2 - r, -h/2);
+  ctx.quadraticCurveTo(w/2, -h/2, w/2, -h/2 + r);
+  ctx.lineTo(w/2, h/2 - r);
+  ctx.quadraticCurveTo(w/2, h/2, w/2 - r, h/2);
+  ctx.lineTo(-w/2 + r, h/2);
+  ctx.quadraticCurveTo(-w/2, h/2, -w/2, h/2 - r);
+  ctx.lineTo(-w/2, -h/2 + r);
+  ctx.quadraticCurveTo(-w/2, -h/2, -w/2 + r, -h/2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 参考点（中心）
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#1f6feb';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+  ctx.restore();
+}
+
+// ============ 绘图：可动铰支座（Roller） ============
+function drawRoller(cx, cy) {
+  // 支座：三角形 + 两个滚轮
+  // 顶部三角形（铰）
+  const triH = 28, triW = 30;
+  const yTop = cy;                    // 梁底部
+  const yBot = yTop + triH;           // 三角底部
+  ctx.fillStyle = '#e6edf3';
+  ctx.strokeStyle = '#6e7681';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - triW/2, yBot);
+  ctx.lineTo(cx + triW/2, yBot);
+  ctx.lineTo(cx, yTop);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+
+  // 铰节点（小圆）
+  ctx.fillStyle = '#161b22';
+  ctx.strokeStyle = '#c9d1d9';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(cx, yTop, 3, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+
+  // 两个滚轮（在三角底和地面之间）
+  const rR = 7;
+  const wheelY = yBot + rR + 1;
+  drawRollerWheel(cx - 12, wheelY, rR);
+  drawRollerWheel(cx + 12, wheelY, rR);
+
+  // 返回地面线 Y 位置
+  return wheelY + rR;
+}
+function drawRollerWheel(cx, cy, r) {
+  ctx.fillStyle = '#c9d1d9';
+  ctx.strokeStyle = '#484f58';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  // 轮毂
+  ctx.fillStyle = '#484f58';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+  // 十字辐条
+  ctx.strokeStyle = '#484f58';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(cx - r + 2, cy); ctx.lineTo(cx + r - 2, cy);
+  ctx.moveTo(cx, cy - r + 2); ctx.lineTo(cx, cy + r - 2);
+  ctx.stroke();
+}
+
+// ============ 绘图：固定铰支座（Pin） ============
+function drawPin(cx, cy) {
+  // 顶部三角形
+  const triH = 32, triW = 34;
+  const yTop = cy;
+  const yBot = yTop + triH;
+  ctx.fillStyle = '#e6edf3';
+  ctx.strokeStyle = '#6e7681';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - triW/2, yBot);
+  ctx.lineTo(cx + triW/2, yBot);
+  ctx.lineTo(cx, yTop);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+
+  // 铰节点
+  ctx.fillStyle = '#161b22';
+  ctx.strokeStyle = '#c9d1d9';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(cx, yTop, 3.2, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+
+  // 下方底座（带斜线阴影的矩形，与地基融合）
+  const baseH = 10;
+  ctx.fillStyle = '#30363d';
+  ctx.strokeStyle = '#484f58';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.rect(cx - triW/2 - 4, yBot, triW + 8, baseH);
+  ctx.fill(); ctx.stroke();
+
+  // 斜线阴影（底部）
+  ctx.strokeStyle = '#484f58';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const yS = yBot + baseH;
+  for (let x = cx - triW/2 - 4; x < cx + triW/2 + 4; x += 12) {
+    ctx.moveTo(x, yS);
+    ctx.lineTo(x + 10, yS + 10);
+  }
+  ctx.stroke();
+
+  return yS; // 地面线位置
+}
+
+// ============ 绘图：固定支座（Fixed） ============
+function drawFixed(cx, cy, beamLen = 280) {
+  // 右侧固定墙，梁的右端嵌入墙体
+  const wallX = cx + beamLen/2 + 2;
+  const wallTop = cy - 60;
+  const wallBot = cy + 60;
+
+  // 墙体
+  ctx.fillStyle = '#30363d';
+  ctx.strokeStyle = '#6e7681';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.rect(wallX, wallTop, 36, wallBot - wallTop);
+  ctx.fill(); ctx.stroke();
+
+  // 斜线阴影（最右侧）
+  ctx.strokeStyle = '#484f58';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let y = wallTop; y < wallBot; y += 10) {
+    ctx.moveTo(wallX + 36, y);
+    ctx.lineTo(wallX + 46, y + 10);
+  }
+  ctx.stroke();
+
+  // 嵌入处上下两条短粗线（表示嵌固约束）
+  ctx.strokeStyle = '#ff7b72';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(wallX - 2, cy - 14); ctx.lineTo(wallX + 4, cy - 14);
+  ctx.moveTo(wallX - 2, cy + 14); ctx.lineTo(wallX + 4, cy + 14);
+  ctx.stroke();
+
+  // 没有"地面"，return 一个极大值让 drawGround 被忽略
+  return null;
+}
+
+// ============ 绘图：定向滑动支座（Guided） ============
+function drawGuided(cx, cy) {
+  // 两个平行夹板之间，梁可水平滑动但不可转动、不可竖向
+  const gap = 34;           // 上下夹板间距（梁高 16 + 余量）
+  const plateLen = 64;
+  const yTop = cy - gap/2;
+  const yBot = cy + gap/2;
+
+  // 上方夹板 + 阴影
+  drawOnePlate(cx, yTop, plateLen, true);
+  // 下方夹板 + 阴影
+  drawOnePlate(cx, yBot, plateLen, false);
+
+  // 夹板右侧：连接线（表示是一个整体支座）
+  ctx.strokeStyle = '#484f58';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(cx + plateLen/2, yTop);
+  ctx.lineTo(cx + plateLen/2, yBot);
+  ctx.stroke();
+
+  // 返回地面线（下底板下方）
+  return yBot + 10;
+}
+function drawOnePlate(cx, cy, len, isTop) {
+  const h = 10;
+  const yS = isTop ? cy - h : cy;
+  ctx.fillStyle = '#30363d';
+  ctx.strokeStyle = '#6e7681';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.rect(cx - len/2, yS, len, h);
+  ctx.fill(); ctx.stroke();
+
+  // 滚球（在夹板内侧左右两个，减少摩擦）
+  ctx.fillStyle = '#c9d1d9';
+  ctx.strokeStyle = '#484f58';
+  ctx.lineWidth = 1;
+  const ballR = 3.2;
+  const ballY = isTop ? cy + 0.5 : cy - 0.5;
+  [-len/2 + 14, len/2 - 14].forEach(xo => {
+    ctx.beginPath();
+    ctx.arc(cx + xo, ballY, ballR, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+  });
+}
+
+// ============ 绘图：反力箭头 + 反力偶 ============
+function drawReactions(beamCx, beamCy, beamLen, thetaDeg) {
+  if (!showForce) return;
+  const c = SUPPORTS[suppType].constraints;
+  const theta = -thetaDeg * Math.PI / 180;
+
+  // 力的作用点随支座类型而变
+  let fx = beamCx, fy = beamCy;
+  let forceYBase, momentXBase, momentYBase;
+
+  if (suppType === 'roller' || suppType === 'pin') {
+    // 作用点：梁下方铰节点位置（相对梁中心 = 梁高一半 + 三角铰尖高）
+    const d = 8 + 3; // 梁高一半 + 铰尖
+    fx = beamCx;
+    fy = beamCy + d;
+    forceYBase = fy + 90;
+  } else if (suppType === 'fixed') {
+    // 作用点：梁右端（嵌入墙处）
+    fx = beamCx + beamLen/2 - 16;
+    fy = beamCy;
+    forceYBase = fy + 100;
+  } else if (suppType === 'guided') {
+    // 作用点：梁中心附近（夹板区域内）
+    fx = beamCx;
+    fy = beamCy;
+    forceYBase = fy + 100;
+  }
+
+  // 竖向反力 Fᵧ（除 roller/pin/guided 的 ty=false 外才画，但 fixed 也约束 ty）
+  if (!c.ty) {
+    // 向上箭头：从支座位置指向梁
+    const ty = fy + 90;
+    drawArrow(fx, ty, fx, fy + 10, '#ff7b72', 2.5, 12);
+    // 标签
+    ctx.font = 'bold 13px "Consolas"';
+    ctx.fillStyle = '#ff7b72';
+    ctx.fillText('Fᵧ', fx + 8, ty - 8);
+  }
+
+  // 水平反力 Fₓ（仅 pin 和 fixed 的 tx=false）
+  if (!c.tx) {
+    const tx = fx + 90;
+    drawArrow(tx, fy, fx + 12, fy, '#ff7b72', 2.5, 12);
+    ctx.font = 'bold 13px "Consolas"';
+    ctx.fillStyle = '#ff7b72';
+    ctx.fillText('Fₓ', tx - 24, fy - 8);
+  }
+
+  // 反力偶 M（fixed 和 guided 的 theta=false）
+  if (!c.theta) {
+    drawCouple(fx, fy - 6, 24);
+    ctx.font = 'bold 13px "Consolas"';
+    ctx.fillStyle = '#a371f7';
+    ctx.fillText('M', fx + 34, fy - 26);
+  }
+}
+
+// 反力偶：圆弧 + 双箭头
+function drawCouple(cx, cy, r) {
+  ctx.save();
+  ctx.strokeStyle = '#a371f7';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  // 330° → 90° 圆弧
+  const a0 = (330) * Math.PI / 180;
+  const a1 = (30) * Math.PI / 180;
+  ctx.arc(cx, cy, r, a0, a1, true);
+  ctx.stroke();
+
+  // 起点箭头（位于 330°）
+  drawArrowHeadAtAngle(cx, cy, r, a0, false, '#a371f7');
+  // 终点箭头（位于 30°）
+  drawArrowHeadAtAngle(cx, cy, r, a1, true, '#a371f7');
+  ctx.restore();
+}
+function drawArrowHeadAtAngle(cx, cy, r, angle, atEnd, color) {
+  const tx = cx + Math.cos(angle) * r;
+  const ty = cy + Math.sin(angle) * r;
+  // 切向方向（沿圆弧方向）
+  const tdir = atEnd ? angle + Math.PI/2 : angle - Math.PI/2;
+  const ux = Math.cos(tdir), uy = Math.sin(tdir);
+  const nx = -Math.sin(tdir), ny = Math.cos(tdir);
+  const hl = 9;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(tx - ux * hl + nx * hl * 0.5, ty - uy * hl + ny * hl * 0.5);
+  ctx.lineTo(tx - ux * hl - nx * hl * 0.5, ty - uy * hl - ny * hl * 0.5);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ============ 绘图：自由度标记（自由方向用虚线双箭头指示） ============
+function drawDofMarkers(beamCx, beamCy) {
+  if (!showDofMarker) return;
+  const c = SUPPORTS[suppType].constraints;
+
+  const markerY = beamCy - 100;
+  const markerX = beamCx - 200;
+
+  // X 方向
+  if (c.tx) {
+    drawBidirectionalArrow(markerX - 32, markerY, markerX + 32, markerY, '#3fb950');
+    ctx.font = 'bold 12px "Segoe UI"';
+    ctx.fillStyle = '#3fb950';
+    ctx.fillText('自由 →', markerX + 40, markerY + 4);
+  } else {
+    ctx.font = 'bold 12px "Segoe UI"';
+    ctx.fillStyle = '#f85149';
+    ctx.fillText('✗ 约束 X', markerX - 20, markerY + 4);
+  }
+
+  // Y 方向
+  if (c.ty) {
+    drawBidirectionalArrow(markerX, markerY + 28, markerX, markerY + 88, '#3fb950');
+    ctx.font = 'bold 12px "Segoe UI"';
+    ctx.fillStyle = '#3fb950';
+    ctx.fillText('↑ 自由', markerX + 8, markerY + 62);
+  } else {
+    ctx.font = 'bold 12px "Segoe UI"';
+    ctx.fillStyle = '#f85149';
+    ctx.fillText('✗ 约束 Y', markerX - 8, markerY + 62);
+  }
+
+  // 转动方向（用弧线 + 双箭头）
+  const rCx = beamCx + 190, rCy = markerY + 56;
+  if (c.theta) {
+    drawCouple(rCx, rCy, 22);
+    // 用绿色虚线覆盖表示自由
+    ctx.save();
+    ctx.strokeStyle = 'rgba(63,185,80,0.4)';
+    ctx.lineWidth = 5;
+    ctx.setLineDash([3,3]);
+    ctx.beginPath();
+    ctx.arc(rCx, rCy, 22, (330) * Math.PI / 180, (30) * Math.PI / 180, true);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    ctx.font = 'bold 12px "Segoe UI"';
+    ctx.fillStyle = '#3fb950';
+    ctx.fillText('自由转动 θ', rCx + 32, rCy + 4);
+  } else {
+    ctx.font = 'bold 12px "Segoe UI"';
+    ctx.fillStyle = '#f85149';
+    ctx.fillText('✗ 约束 θ', rCx - 12, rCy + 4);
+  }
+}
+function drawBidirectionalArrow(x1, y1, x2, y2, color) {
+  drawArrow(x1, y1, x2, y2, color, 2, 10);
+  drawArrow(x2, y2, x1, y1, color, 2, 10);
+}
+
+// ============ 坐标括号标签 ============
+function drawCoordLabel(sx, sy, text, color) {
+  ctx.font = 'bold 12px "Consolas"';
+  const m = ctx.measureText(text);
+  const pad = 6; const boxW = m.width + pad * 2; const boxH = 18;
+  const labelOnLeft = sx + 24 + boxW > W - 8;
+  const labelOnBottom = sy - 24 - boxH < 8;
+  const lx = labelOnLeft ? sx - 18 - boxW : sx + 18;
+  const ly = labelOnBottom ? sy + 18 : sy - 18 - boxH;
+  ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(labelOnLeft ? lx + boxW : lx, ly + boxH/2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(13,17,23,0.92)'; ctx.fillRect(lx, ly, boxW, boxH);
+  ctx.strokeStyle = color; ctx.lineWidth = 1.2; ctx.strokeRect(lx, ly, boxW, boxH);
+  ctx.fillStyle = color; ctx.textBaseline = 'middle';
+  ctx.fillText(text, lx + pad, ly + boxH/2 + 1);
+  ctx.textBaseline = 'alphabetic';
+}
+
+// ============ 坐标显示 ============
+function updateCoordDisplay() {
+  const c = SUPPORTS[suppType].constraints;
+  const body = document.getElementById('coord-body');
+  const rows = [];
+  const x = c.tx ? `<span class="val x">${state.tx.toFixed(2)}</span>` : `<span class="val locked">0.00 (约束)</span>`;
+  const y = c.ty ? `<span class="val y">${state.ty.toFixed(2)}</span>` : `<span class="val locked">0.00 (约束)</span>`;
+  const a = c.theta ? `<span class="val a">${Math.round(state.theta)}°</span>` : `<span class="val locked">0° (约束)</span>`;
+  rows.push(`<div class="row"><span class="key">x_C =</span>${x}</div>`);
+  rows.push(`<div class="row"><span class="key">y_C =</span>${y}</div>`);
+  rows.push(`<div class="row"><span class="key">θ   =</span>${a}</div>`);
+  body.innerHTML = rows.join('');
+}
+
+// ============ 鼠标拖拽（仅自由维度） ============
+let dragging = false;
+let dragOffset = { x: 0, y: 0 };
+function hitBeam(mx, my) {
+  // 简单矩形碰撞（不考虑旋转，近似即可）
+  const sp = toScreen(state.tx, state.ty);
+  return Math.abs(mx - sp.x) < 140 && Math.abs(my - sp.y) < 14;
+}
+function getMouse(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+canvas.addEventListener('mousedown', (e) => {
+  const { x: mx, y: my } = getMouse(e);
+  if (hitBeam(mx, my)) {
+    dragging = true;
+    autoPlay = false;
+    document.getElementById('auto-switch').classList.remove('on');
+    const sp = toScreen(state.tx, state.ty);
+    dragOffset.x = mx - sp.x; dragOffset.y = my - sp.y;
+    canvas.style.cursor = 'grabbing';
+  }
+});
+canvas.addEventListener('mousemove', (e) => {
+  const { x: mx, y: my } = getMouse(e);
+  if (dragging) {
+    const c = SUPPORTS[suppType].constraints;
+    if (c.tx || c.ty) {
+      const newSx = mx - dragOffset.x, newSy = my - dragOffset.y;
+      const world = toWorld(newSx, newSy);
+      if (c.tx) state.tx = Math.max(-6, Math.min(6, world.x));
+      if (c.ty) state.ty = Math.max(-6, Math.min(6, world.y));
+      syncSliders();
+    }
+  } else {
+    canvas.style.cursor = hitBeam(mx, my) ? 'grab' : 'default';
+  }
+});
+window.addEventListener('mouseup', () => { if (dragging) { dragging = false; canvas.style.cursor='default'; } });
+canvas.addEventListener('mouseleave', () => { if (!dragging) canvas.style.cursor='default'; });
+
+function syncSliders() {
+  document.querySelectorAll('input[type=range]').forEach(sl => {
+    const k = sl.closest('.slider-row').dataset.dof;
+    const c = SUPPORTS[suppType].constraints;
+    if (c[k]) {
+      sl.value = state[k];
+      const v = sl.parentElement.querySelector('.val');
+      v.textContent = k === 'theta' ? Math.round(state[k]) + '°' : state[k].toFixed(2);
+    }
+  });
+}
+
+// ============ 主循环 ============
+let lastTime = performance.now();
+function animate(now) {
+  const dt = (now - lastTime) / 1000; lastTime = now;
+  if (W < 2 || H < 2) resize();
+
+  if (autoPlay) {
+    autoT += dt;
+    const c = SUPPORTS[suppType].constraints;
+    const period = 2;
+    const freeKeys = [];
+    if (c.tx) freeKeys.push('tx');
+    if (c.ty) freeKeys.push('ty');
+    if (c.theta) freeKeys.push('theta');
+    if (freeKeys.length === 0) { state.tx=0; state.ty=0; state.theta=0; syncSliders(); }
+    else {
+      const idx = Math.floor(autoT / period) % freeKeys.length;
+      const k = freeKeys[idx];
+      const localT = (autoT % period) / period;
+      const wave = Math.sin(localT * Math.PI * 2);
+      state[k] = (k === 'theta') ? wave * 60 : wave * 4;
+      freeKeys.forEach((kk, i) => { if (i !== idx) state[kk] = 0; });
+      syncSliders();
+    }
+  }
+
+  ctx.clearRect(0, 0, W, H);
+  drawGrid();
+
+  // 梁中心屏幕坐标（根据 state.tx/ty）
+  const c = SUPPORTS[suppType].constraints;
+  const effTx = c.tx ? state.tx : 0;
+  const effTy = c.ty ? state.ty : 0;
+  const effTh = c.theta ? state.theta : 0;
+  const beamLen = 280;
+
+  const beamCenter = toScreen(effTx, effTy + 1.6);  // 稍微往上，给支座留空间
+  const beamY = beamCenter.y;
+  const beamX = beamCenter.x;
+
+  // 根据支座类型决定：
+  //   - roller/pin：画支座在梁下方 + 地基（支座下方）
+  //   - guided：    画支座（夹板）包住梁
+  //   - fixed：     画墙在梁右端 + 无地基
+  let groundY = null;
+  if (suppType === 'roller') {
+    groundY = drawRoller(beamX, beamY + 8);
+  } else if (suppType === 'pin') {
+    groundY = drawPin(beamX, beamY + 8);
+  } else if (suppType === 'guided') {
+    groundY = drawGuided(beamX, beamY);
+  } else if (suppType === 'fixed') {
+    // 固定支座画在梁右端
+    drawFixed(beamX, beamY, beamLen);
+  }
+
+  // 画梁
+  drawBeam(beamX, beamY, effTh, beamLen, 16);
+
+  // 画地基（roller/pin/guided 才有地基，fixed 是墙不需要）
+  if (groundY !== null && groundY !== undefined) {
+    drawGround(groundY);
+  }
+
+  // 反力
+  drawReactions(beamX, beamY, beamLen, effTh);
+
+  // 自由度标记
+  drawDofMarkers(beamX, beamY);
+
+  // 坐标括号
+  const label = `(${c.tx ? effTx.toFixed(2) : '0.00'}, ${c.ty ? effTy.toFixed(2) : '0.00'}, ${c.theta ? Math.round(effTh) : 0}°)`;
+  drawCoordLabel(beamX, beamY, label, '#79c0ff');
+
+  updateCoordDisplay();
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+// 初始化
+setSupport('roller');
+</script>
+</body>
+</html>

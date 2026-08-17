@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>平面自由度动态可视化 · 点与刚体</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #0d1117; color: #e6edf3; overflow: hidden; }
+
+  #app { display: flex; height: 100vh; }
+
+  /* 左侧 2D 画布 */
+  #scene-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 50%, #1b2433 0%, #0a0e16 75%);
+  }
+  #scene {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: block;
+  }
+
+  /* 顶部模式切换 */
+  #topbar {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; z-index: 10;
+    background: rgba(22,27,34,0.85); padding: 8px; border-radius: 12px;
+    border: 1px solid #30363d; backdrop-filter: blur(6px);
+  }
+  .mode-btn {
+    padding: 8px 18px; border: none; border-radius: 8px; cursor: pointer;
+    background: transparent; color: #8b949e; font-size: 14px; font-weight: 600;
+    transition: all .25s;
+  }
+  .mode-btn.active { background: #1f6feb; color: #fff; box-shadow: 0 0 12px rgba(31,111,235,.6); }
+  .mode-btn:hover:not(.active) { color: #e6edf3; background: rgba(255,255,255,.05); }
+
+  /* DOF 计数器 */
+  #dof-badge {
+    position: absolute; top: 16px; right: 16px; z-index: 10;
+    background: rgba(22,27,34,0.85); border: 1px solid #30363d;
+    padding: 10px 16px; border-radius: 12px; backdrop-filter: blur(6px);
+    text-align: center;
+  }
+  #dof-badge .num { font-size: 32px; font-weight: 800; color: #58a6ff; line-height: 1; }
+  #dof-badge .lbl { font-size: 11px; color: #8b949e; margin-top: 4px; letter-spacing: 1px; }
+
+  /* 实时坐标显示 */
+  #coord-display {
+    position: absolute; bottom: 16px; left: 16px; z-index: 10;
+    background: rgba(13,17,23,0.85); border: 1px solid #30363d;
+    padding: 12px 16px; border-radius: 10px; backdrop-filter: blur(6px);
+    font-family: "Consolas", "Courier New", monospace; font-size: 13px;
+    line-height: 1.8; min-width: 220px;
+  }
+  #coord-display .row { display: flex; justify-content: space-between; gap: 16px; }
+  #coord-display .key { color: #8b949e; }
+  #coord-display .val { color: #58a6ff; font-weight: 600; }
+  #coord-display .val.x { color: #f85149; }
+  #coord-display .val.y { color: #3fb950; }
+  #coord-display .val.a { color: #ffd700; }
+  #coord-display .title { color: #c9d1d9; font-size: 12px; margin-bottom: 6px; font-family: "Segoe UI", sans-serif; letter-spacing: 1px; }
+
+  /* 右侧控制面板 */
+  #panel {
+    width: 340px; background: #161b22; border-left: 1px solid #30363d;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #panel h2 {
+    padding: 16px; font-size: 16px; color: #e6edf3;
+    border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 8px;
+  }
+  #panel h2 .dot { width: 8px; height: 8px; border-radius: 50%; background: #58a6ff; box-shadow: 0 0 8px #58a6ff; }
+  #panel-body { flex: 1; overflow-y: auto; padding: 12px 16px; }
+
+  .group {
+    margin-bottom: 18px; padding: 12px;
+    background: #0d1117; border: 1px solid #21262d; border-radius: 10px;
+  }
+  .group-title {
+    font-size: 12px; color: #8b949e; text-transform: uppercase;
+    letter-spacing: 1.5px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .group-title .tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #30363d; color: #c9d1d9; }
+
+  .slider-row {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+  }
+  .slider-row:last-child { margin-bottom: 0; }
+  .slider-row .axis {
+    width: 22px; height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .axis-x { background: #f85149; }
+  .axis-y { background: #3fb950; }
+  .axis-a { background: #ffd700; color: #000; }
+  .slider-row .name { flex: 1; font-size: 13px; color: #c9d1d9; }
+  .slider-row input[type=range] { width: 110px; accent-color: #58a6ff; cursor: pointer; }
+  .slider-row .val {
+    width: 56px; text-align: right; font-size: 12px; color: #8b949e;
+    font-variant-numeric: tabular-nums; font-family: "Consolas", monospace;
+  }
+
+  .btn {
+    width: 100%; padding: 9px; border: none; border-radius: 8px; cursor: pointer;
+    background: #21262d; color: #c9d1d9; font-size: 13px; font-weight: 600;
+    transition: all .2s; margin-top: 6px;
+  }
+  .btn:hover { background: #30363d; color: #fff; }
+
+  /* 说明区域 */
+  #info {
+    border-top: 1px solid #30363d; padding: 14px 16px; background: #0d1117;
+    font-size: 12px; color: #8b949e; line-height: 1.7;
+  }
+  #info b { color: #c9d1d9; }
+  #info .formula { color: #58a6ff; font-family: "Consolas", monospace; }
+
+  #panel-body::-webkit-scrollbar { width: 6px; }
+  #panel-body::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+  .switch-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0; font-size: 13px; color: #c9d1d9;
+  }
+  .switch {
+    position: relative; width: 38px; height: 22px; background: #30363d;
+    border-radius: 11px; cursor: pointer; transition: background .2s;
+  }
+  .switch.on { background: #1f6feb; }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    background: #fff; border-radius: 50%; transition: transform .2s;
+  }
+  .switch.on::after { transform: translateX(16px); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scene-wrap">
+    <canvas id="scene"></canvas>
+
+    <div id="topbar">
+      <button class="mode-btn active" data-mode="point">平面内的点</button>
+      <button class="mode-btn" data-mode="rigid">平面内的刚体</button>
+    </div>
+
+    <div id="dof-badge">
+      <div class="num" id="dof-num">2</div>
+      <div class="lbl" id="dof-lbl">自由度 DOF</div>
+    </div>
+
+    <div id="coord-display">
+      <div class="title" id="coord-title">点 的坐标</div>
+      <div id="coord-body"></div>
+    </div>
+  </div>
+
+  <div id="panel">
+    <h2><span class="dot"></span><span id="panel-title">点的自由度</span></h2>
+    <div id="panel-body">
+
+      <div class="group">
+        <div class="group-title">平移自由度 <span class="tag">Translation</span></div>
+        <div class="slider-row">
+          <div class="axis axis-x">X</div>
+          <div class="name">沿 X 轴移动</div>
+          <input type="range" min="-8" max="8" step="0.05" value="0" data-dof="tx">
+          <div class="val">0.00</div>
+        </div>
+        <div class="slider-row">
+          <div class="axis axis-y">Y</div>
+          <div class="name">沿 Y 轴移动</div>
+          <input type="range" min="-8" max="8" step="0.05" value="0" data-dof="ty">
+          <div class="val">0.00</div>
+        </div>
+      </div>
+
+      <div class="group" id="rot-group" style="display:none;">
+        <div class="group-title">转动自由度 <span class="tag">Rotation</span></div>
+        <div class="slider-row">
+          <div class="axis axis-a">θ</div>
+          <div class="name">中轴线与 X 轴夹角</div>
+          <input type="range" min="-180" max="180" step="1" value="0" data-dof="theta">
+          <div class="val">0°</div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">显示选项</div>
+        <div class="switch-row">
+          <span>显示运动轨迹</span>
+          <div class="switch on" id="trail-switch"></div>
+        </div>
+        <div class="switch-row">
+          <span>显示坐标投影线</span>
+          <div class="switch on" id="proj-switch"></div>
+        </div>
+        <div class="switch-row">
+          <span>显示夹角弧线</span>
+          <div class="switch on" id="arc-switch"></div>
+        </div>
+        <div class="switch-row">
+          <span>自动演示动画</span>
+          <div class="switch" id="auto-switch"></div>
+        </div>
+        <button class="btn" id="reset-btn">重置位置</button>
+      </div>
+
+    </div>
+
+    <div id="info">
+      <b id="info-title">平面内的点</b><br>
+      <span id="info-body">在平面中确定一个点的位置需要 <b>2 个独立坐标 (x, y)</b>，因此平面内点的自由度为 2。</span>
+      <br><br>
+      <span class="formula" id="info-formula">DOF = 2</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ Canvas 初始化 ============
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+
+let W = 0, H = 0, CX = 0, CY = 0;
+const SCALE = 50; // 1 单位 = 50 像素
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = w; H = h;
+  CX = W / 2; CY = H / 2;
+}
+window.addEventListener('resize', resize);
+window.addEventListener('load', resize);
+// 延迟一帧再 resize，确保 flex 布局已完成
+requestAnimationFrame(resize);
+
+// ============ 坐标变换 ============
+// 数学坐标 -> 屏幕坐标 (Y 轴翻转)
+function toScreen(x, y) {
+  return { x: CX + x * SCALE, y: CY - y * SCALE };
+}
+function toWorld(sx, sy) {
+  return { x: (sx - CX) / SCALE, y: (CY - sy) / SCALE };
+}
+
+// ============ 状态 ============
+let mode = 'point';
+let showTrail = true;
+let showProj = true;
+let showArc = true;
+let autoPlay = false;
+let autoT = 0;
+
+const state = { tx: 0, ty: 0, theta: 0 };
+let trailPoints = [];
+const MAX_TRAIL = 300;
+
+// ============ UI 事件 ============
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    mode = btn.dataset.mode;
+    switchMode();
+  });
+});
+
+function switchMode() {
+  const isRigid = mode === 'rigid';
+  document.getElementById('rot-group').style.display = isRigid ? 'block' : 'none';
+  document.getElementById('dof-num').textContent = isRigid ? 3 : 2;
+  document.getElementById('panel-title').textContent = isRigid ? '刚体自由度' : '点的自由度';
+  document.getElementById('coord-title').textContent = isRigid ? '刚体参考点坐标 / 姿态角' : '点 的坐标';
+
+  if (isRigid) {
+    document.getElementById('info-title').textContent = '平面内的刚体';
+    document.getElementById('info-body').innerHTML =
+      '刚体既有位置又有姿态。在平面中确定一个刚体需要 <b>参考点坐标 (x, y) + 转角 θ</b>，共 <b>3 个自由度</b>。<br>' +
+      'θ 为刚体中轴线与 X 轴的夹角，决定其朝向。';
+    document.getElementById('info-formula').textContent = 'DOF = 2 (平移) + 1 (转动) = 3';
+  } else {
+    document.getElementById('info-title').textContent = '平面内的点';
+    document.getElementById('info-body').innerHTML =
+      '在平面中确定一个点的位置需要 <b>2 个独立坐标 (x, y)</b>，因此平面内点的自由度为 2。';
+    document.getElementById('info-formula').textContent = 'DOF = 2';
+  }
+  resetState();
+}
+
+document.querySelectorAll('input[type=range]').forEach(slider => {
+  slider.addEventListener('input', () => {
+    const key = slider.dataset.dof;
+    state[key] = parseFloat(slider.value);
+    const valEl = slider.parentElement.querySelector('.val');
+    if (key === 'theta') {
+      valEl.textContent = Math.round(state[key]) + '°';
+    } else {
+      valEl.textContent = state[key].toFixed(2);
+    }
+  });
+});
+
+document.getElementById('trail-switch').addEventListener('click', e => {
+  e.currentTarget.classList.toggle('on');
+  showTrail = e.currentTarget.classList.contains('on');
+  if (!showTrail) trailPoints = [];
+});
+
+document.getElementById('proj-switch').addEventListener('click', e => {
+  e.currentTarget.classList.toggle('on');
+  showProj = e.currentTarget.classList.contains('on');
+});
+
+document.getElementById('arc-switch').addEventListener('click', e => {
+  e.currentTarget.classList.toggle('on');
+  showArc = e.currentTarget.classList.contains('on');
+});
+
+document.getElementById('auto-switch').addEventListener('click', e => {
+  e.currentTarget.classList.toggle('on');
+  autoPlay = e.currentTarget.classList.contains('on');
+  if (autoPlay) autoT = 0;
+});
+
+document.getElementById('reset-btn').addEventListener('click', resetState);
+
+function resetState() {
+  state.tx = 0; state.ty = 0; state.theta = 0;
+  trailPoints = [];
+  document.querySelectorAll('input[type=range]').forEach(slider => {
+    const key = slider.dataset.dof;
+    slider.value = state[key];
+    const valEl = slider.parentElement.querySelector('.val');
+    if (key === 'theta') valEl.textContent = '0°';
+    else valEl.textContent = '0.00';
+  });
+}
+
+// ============ 绘制：网格与坐标轴 ============
+function drawGrid() {
+  ctx.lineWidth = 1;
+
+  // 细网格
+  ctx.strokeStyle = '#1c2230';
+  ctx.beginPath();
+  const step = SCALE;
+  for (let x = CX % step; x < W; x += step) {
+    ctx.moveTo(x, 0); ctx.lineTo(x, H);
+  }
+  for (let y = CY % step; y < H; y += step) {
+    ctx.moveTo(0, y); ctx.lineTo(W, y);
+  }
+  ctx.stroke();
+
+  // 坐标轴
+  ctx.strokeStyle = '#30363d';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, CY); ctx.lineTo(W, CY);
+  ctx.moveTo(CX, 0); ctx.lineTo(CX, H);
+  ctx.stroke();
+
+  // 轴标签
+  ctx.font = 'bold 14px "Segoe UI", sans-serif';
+  // X 轴 (红色)
+  ctx.fillStyle = '#f85149';
+  ctx.fillText('X', W - 20, CY - 8);
+  // Y 轴 (绿色)
+  ctx.fillStyle = '#3fb950';
+  ctx.fillText('Y', CX + 8, 18);
+
+  // 原点
+  ctx.fillStyle = '#e6edf3';
+  ctx.beginPath();
+  ctx.arc(CX, CY, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = '11px "Consolas", monospace';
+  ctx.fillText('O', CX - 14, CY + 14);
+}
+
+// ============ 绘制：投影线 ============
+function drawProjections(sx, sy) {
+  if (!showProj) return;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+
+  // 到 X 轴的投影
+  ctx.strokeStyle = 'rgba(248,81,73,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(sx, sy); ctx.lineTo(sx, CY);
+  ctx.stroke();
+
+  // 到 Y 轴的投影
+  ctx.strokeStyle = 'rgba(63,185,80,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(sx, sy); ctx.lineTo(CX, sy);
+  ctx.stroke();
+
+  ctx.setLineDash([]);
+
+  // 投影点
+  ctx.fillStyle = '#f85149';
+  ctx.beginPath(); ctx.arc(sx, CY, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#3fb950';
+  ctx.beginPath(); ctx.arc(CX, sy, 3, 0, Math.PI * 2); ctx.fill();
+}
+
+// ============ 绘制：轨迹 ============
+function drawTrail() {
+  if (!showTrail || trailPoints.length < 2) return;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  for (let i = 1; i < trailPoints.length; i++) {
+    const p0 = toScreen(trailPoints[i-1].x, trailPoints[i-1].y);
+    const p1 = toScreen(trailPoints[i].x, trailPoints[i].y);
+    const alpha = i / trailPoints.length;
+    ctx.strokeStyle = mode === 'point'
+      ? `rgba(255,215,0,${alpha * 0.7})`
+      : `rgba(88,166,255,${alpha * 0.7})`;
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+    ctx.stroke();
+  }
+}
+
+// ============ 绘制：坐标括号标签 ============
+function drawCoordLabel(sx, sy, text, color) {
+  ctx.font = 'bold 13px "Consolas", "Courier New", monospace';
+  const metrics = ctx.measureText(text);
+  const pad = 6;
+  const boxW = metrics.width + pad * 2;
+  const boxH = 20;
+
+  // 自适应位置：靠右边界时放左侧，靠上边界时放下方
+  const labelOnLeft = sx + 24 + boxW > W - 8;
+  const labelOnBottom = sy - 24 - boxH < 8;
+  const lx = labelOnLeft ? sx - 18 - boxW : sx + 18;
+  const ly = labelOnBottom ? sy + 18 : sy - 18 - boxH;
+
+  // 引导线
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(labelOnLeft ? lx + boxW : lx, ly + boxH / 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 背景框
+  ctx.fillStyle = 'rgba(13,17,23,0.9)';
+  ctx.fillRect(lx, ly, boxW, boxH);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(lx, ly, boxW, boxH);
+
+  // 文本
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, lx + pad, ly + boxH / 2 + 1);
+  ctx.textBaseline = 'alphabetic';
+}
+
+// ============ 绘制：点 ============
+function drawPoint(x, y) {
+  const p = toScreen(x, y);
+
+  // 光晕
+  const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 28);
+  grad.addColorStop(0, 'rgba(255,215,0,0.45)');
+  grad.addColorStop(1, 'rgba(255,215,0,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 28, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 主体
+  ctx.fillStyle = '#ffd700';
+  ctx.strokeStyle = '#fff8c0';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // 坐标括号标签 (x, y)
+  const label = `(${x.toFixed(2)}, ${y.toFixed(2)})`;
+  drawCoordLabel(p.x, p.y, label, '#ffd700');
+}
+
+// ============ 绘制：刚体 (椭圆) ============
+function drawRigid(x, y, thetaDeg) {
+  const p = toScreen(x, y);
+  const theta = -thetaDeg * Math.PI / 180; // 屏幕 Y 翻转，角度取反
+  const a = 90; // 长半轴 (像素)
+  const b = 38; // 短半轴
+
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(theta);
+
+  // 椭圆填充 (渐变)
+  const grad = ctx.createLinearGradient(-a, 0, a, 0);
+  grad.addColorStop(0, 'rgba(31,111,235,0.35)');
+  grad.addColorStop(0.5, 'rgba(88,166,255,0.55)');
+  grad.addColorStop(1, 'rgba(31,111,235,0.35)');
+  ctx.fillStyle = grad;
+  ctx.strokeStyle = '#79c0ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, a, b, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // 中轴线 (长轴)
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(-a, 0); ctx.lineTo(a, 0);
+  ctx.stroke();
+
+  // 中轴线箭头 (指向 +方向，表示刚体的"朝向")
+  ctx.fillStyle = '#ffd700';
+  ctx.beginPath();
+  ctx.moveTo(a, 0);
+  ctx.lineTo(a - 12, -6);
+  ctx.lineTo(a - 12, 6);
+  ctx.closePath();
+  ctx.fill();
+
+  // 短轴 (虚线，辅助观察)
+  ctx.strokeStyle = 'rgba(121,192,255,0.5)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, -b); ctx.lineTo(0, b);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 参考点 (中心)
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#1f6feb';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+
+  // 在世界坐标系下绘制夹角弧 (不随刚体旋转)
+  if (showArc && Math.abs(thetaDeg) > 0.5) {
+    drawAngleArc(p.x, p.y, thetaDeg);
+  }
+
+  // 坐标括号标签 (x, y, θ°)
+  const thetaDegRounded = Math.round(thetaDeg);
+  const label = `(${x.toFixed(2)}, ${y.toFixed(2)}, ${thetaDegRounded}°)`;
+  drawCoordLabel(p.x, p.y, label, '#79c0ff');
+}
+
+// ============ 绘制：夹角弧 ============
+function drawAngleArc(sx, sy, thetaDeg) {
+  const r = 40;
+  const theta = -thetaDeg * Math.PI / 180;
+
+  ctx.strokeStyle = 'rgba(255,215,0,0.8)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (thetaDeg >= 0) {
+    ctx.arc(sx, sy, r, 0, theta, true);
+  } else {
+    ctx.arc(sx, sy, r, theta, 0, true);
+  }
+  ctx.stroke();
+
+  // 角度文本
+  const midAngle = theta / 2;
+  const tx = sx + Math.cos(midAngle) * (r + 14);
+  const ty = sy + Math.sin(midAngle) * (r + 14);
+  ctx.font = 'bold 12px "Consolas", monospace';
+  ctx.fillStyle = '#ffd700';
+  const txt = `θ=${Math.round(thetaDeg)}°`;
+  ctx.fillText(txt, tx - 20, ty + 4);
+}
+
+// ============ 更新坐标显示 ============
+function updateCoordDisplay() {
+  const body = document.getElementById('coord-body');
+  const x = state.tx.toFixed(2);
+  const y = state.ty.toFixed(2);
+
+  if (mode === 'point') {
+    body.innerHTML = `
+      <div class="row"><span class="key">x =</span><span class="val x">${x}</span></div>
+      <div class="row"><span class="key">y =</span><span class="val y">${y}</span></div>
+    `;
+  } else {
+    const theta = Math.round(state.theta);
+    body.innerHTML = `
+      <div class="row"><span class="key">参考点 x_C =</span><span class="val x">${x}</span></div>
+      <div class="row"><span class="key">参考点 y_C =</span><span class="val y">${y}</span></div>
+      <div class="row"><span class="key">中轴线夹角 θ =</span><span class="val a">${theta}°</span></div>
+    `;
+  }
+}
+
+// ============ 同步滑块 UI ============
+function syncSliders() {
+  document.querySelectorAll('input[type=range]').forEach(slider => {
+    const key = slider.dataset.dof;
+    slider.value = state[key];
+    const valEl = slider.parentElement.querySelector('.val');
+    if (key === 'theta') valEl.textContent = Math.round(state[key]) + '°';
+    else valEl.textContent = state[key].toFixed(2);
+  });
+}
+
+// ============ 鼠标拖拽 ============
+let dragging = false;
+let dragOffset = { x: 0, y: 0 };
+
+// 判断鼠标是否在刚体椭圆内 (考虑旋转)
+function isInsideRigid(mx, my) {
+  const sp = toScreen(state.tx, state.ty);
+  const theta = -state.theta * Math.PI / 180;
+  const dx = mx - sp.x;
+  const dy = my - sp.y;
+  // 反向旋转到椭圆局部坐标
+  const cos = Math.cos(-theta);
+  const sin = Math.sin(-theta);
+  const lx = dx * cos - dy * sin;
+  const ly = dx * sin + dy * cos;
+  const a = 90, b = 38;
+  return (lx * lx) / (a * a) + (ly * ly) / (b * b) <= 1.2; // 略放大点击区
+}
+
+// 判断鼠标是否在点附近
+function isInsidePoint(mx, my) {
+  const sp = toScreen(state.tx, state.ty);
+  return Math.hypot(mx - sp.x, my - sp.y) < 18;
+}
+
+function getMousePos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  const { x: mx, y: my } = getMousePos(e);
+  const hit = mode === 'point' ? isInsidePoint(mx, my) : isInsideRigid(mx, my);
+  if (hit) {
+    dragging = true;
+    autoPlay = false;
+    document.getElementById('auto-switch').classList.remove('on');
+    const sp = toScreen(state.tx, state.ty);
+    dragOffset.x = mx - sp.x;
+    dragOffset.y = my - sp.y;
+    canvas.style.cursor = 'grabbing';
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  const { x: mx, y: my } = getMousePos(e);
+  if (dragging) {
+    const newSx = mx - dragOffset.x;
+    const newSy = my - dragOffset.y;
+    const world = toWorld(newSx, newSy);
+    state.tx = Math.max(-8, Math.min(8, world.x));
+    state.ty = Math.max(-8, Math.min(8, world.y));
+    syncSliders();
+  } else {
+    // 悬停时变换光标
+    const hit = mode === 'point' ? isInsidePoint(mx, my) : isInsideRigid(mx, my);
+    canvas.style.cursor = hit ? 'grab' : 'default';
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  if (dragging) {
+    dragging = false;
+    canvas.style.cursor = 'default';
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  if (!dragging) canvas.style.cursor = 'default';
+});
+
+// ============ 主循环 ============
+let lastTime = performance.now();
+function animate(now) {
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+
+  // 安全检查：如果画布尺寸为 0，重新获取
+  if (W < 2 || H < 2) {
+    resize();
+  }
+
+  // 自动演示
+  if (autoPlay) {
+    autoT += dt;
+    const period = 2.5;
+    const dofList = mode === 'rigid' ? ['tx','ty','theta'] : ['tx','ty'];
+    const idx = Math.floor(autoT / period) % dofList.length;
+    const localT = (autoT % period) / period;
+    const wave = Math.sin(localT * Math.PI * 2);
+
+    dofList.forEach((k, i) => {
+      if (i === idx) {
+        state[k] = (k === 'theta') ? wave * 150 : wave * 6;
+      } else {
+        state[k] = 0;
+      }
+    });
+    syncSliders();
+  }
+
+  // 清屏
+  ctx.clearRect(0, 0, W, H);
+
+  // 绘制网格与坐标轴
+  drawGrid();
+
+  // 记录轨迹
+  const curPos = { x: state.tx, y: state.ty };
+  if (showTrail) {
+    if (trailPoints.length === 0 ||
+        Math.hypot(curPos.x - trailPoints[trailPoints.length-1].x,
+                   curPos.y - trailPoints[trailPoints.length-1].y) > 0.05) {
+      trailPoints.push(curPos);
+      if (trailPoints.length > MAX_TRAIL) trailPoints.shift();
+    }
+  }
+  drawTrail();
+
+  // 投影线
+  const sp = toScreen(state.tx, state.ty);
+  drawProjections(sp.x, sp.y);
+
+  // 绘制对象
+  if (mode === 'point') {
+    drawPoint(state.tx, state.ty);
+  } else {
+    drawRigid(state.tx, state.ty, state.theta);
+  }
+
+  // 更新坐标显示
+  updateCoordDisplay();
+
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+// 初始化
+switchMode();
+</script>
+</body>
+</html>

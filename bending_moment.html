@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>弯矩求解 · 切取标列四步法</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #0d1117; color: #e6edf3; overflow: hidden; }
+  #app { display: flex; height: 100vh; }
+
+  #scene-wrap { flex:1; position:relative; overflow:hidden; background: radial-gradient(circle at 50% 50%, #1b2433 0%, #0a0e16 75%); }
+  #scene { position:absolute; top:0; left:0; width:100%; height:100%; display:block; }
+
+  /* 顶部步骤指示器 */
+  #stepper {
+    position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:11;
+    display:flex; gap:8px; background:rgba(22,27,34,0.9);
+    padding:8px 16px; border-radius:14px; border:1px solid #30363d; backdrop-filter:blur(8px);
+  }
+  .step-item {
+    display:flex; align-items:center; gap:6px; padding:4px 12px; border-radius:8px;
+    font-size:13px; font-weight:600; color:#484f58; transition:all .35s; cursor:pointer;
+  }
+  .step-item .num {
+    width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:800; background:#30363d; color:#8b949e; transition:all .35s;
+  }
+  .step-item.active { color:#e6edf3; }
+  .step-item.active .num { background:#1f6feb; color:#fff; box-shadow:0 0 10px rgba(31,111,235,.6); }
+  .step-item.done { color:#3fb950; }
+  .step-item.done .num { background:#3fb950; color:#fff; }
+  .step-sep { width:20px; height:2px; background:#30363d; border-radius:1px; align-self:center; }
+
+  /* 底部提示 */
+  #hint-box {
+    position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:10;
+    background:rgba(22,27,34,0.92); border:1px solid #30363d;
+    padding:12px 26px; border-radius:12px; backdrop-filter:blur(8px);
+    font-size:14px; color:#e6edf3; text-align:center; min-width:360px; max-width:640px;
+    transition:opacity .3s;
+  }
+  #hint-box .step-label { font-size:11px; color:#8b949e; letter-spacing:2px; margin-bottom:4px; }
+  #hint-box .hl-y { color:#ffd700; font-weight:600; }
+  #hint-box .hl-b { color:#58a6ff; font-weight:600; }
+  #hint-box .hl-g { color:#3fb950; font-weight:600; }
+  #hint-box .hl-r { color:#f85149; font-weight:600; }
+  #hint-box .hl-p { color:#a371f7; font-weight:600; }
+
+  /* 右侧面板 */
+  #panel {
+    width:320px; background:#161b22; border-left:1px solid #30363d;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  #panel h2 {
+    padding:14px 16px; font-size:14.5px; color:#e6edf3;
+    border-bottom:1px solid #30363d; display:flex; align-items:center; gap:8px;
+  }
+  #panel h2 .dot { width:8px; height:8px; border-radius:50%; background:#ffd700; box-shadow:0 0 8px #ffd700; }
+  #panel-body { flex:1; overflow-y:auto; padding:12px 14px; }
+  #panel-body::-webkit-scrollbar { width:5px; }
+  #panel-body::-webkit-scrollbar-thumb { background:#30363d; border-radius:3px; }
+
+  .btn {
+    width:100%; padding:9px; border:none; border-radius:8px; cursor:pointer;
+    font-size:13px; font-weight:600; transition:all .2s; margin-bottom:6px;
+  }
+  .btn.primary { background:#1f6feb; color:#fff; }
+  .btn.primary:hover { background:#388bfd; }
+  .btn.secondary { background:#21262d; color:#c9d1d9; border:1px solid #30363d; }
+  .btn.secondary:hover { background:#30363d; color:#fff; }
+  .btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+  .info-block {
+    padding:11px; background:#0d1117; border:1px solid #21262d;
+    border-radius:10px; margin-bottom:11px; font-size:12px; line-height:1.7; color:#8b949e;
+  }
+  .info-block b { color:#c9d1d9; }
+  .info-block .hl-b { color:#58a6ff; font-weight:600; }
+  .info-block .hl-y { color:#ffd700; font-weight:600; }
+  .info-block .hl-g { color:#3fb950; font-weight:600; }
+  .info-block .hl-r { color:#f85149; font-weight:600; }
+  .info-block .hl-p { color:#a371f7; font-weight:600; }
+
+  .formula-box {
+    font-family:"Consolas",monospace; font-size:12.5px; color:#c9d1d9;
+    background:rgba(88,166,255,0.06); padding:9px 12px; border-radius:8px;
+    border:1px solid rgba(88,166,255,0.15); margin:6px 0; line-height:2;
+  }
+  .formula-box .lbl { color:#8b949e; font-size:11px; }
+  .formula-box .var { color:#ffd700; }
+  .formula-box .op { color:#a371f7; }
+  .formula-box .res { color:#3fb950; font-weight:700; }
+  .formula-box .step { color:#58a6ff; font-size:11px; font-weight:600; }
+
+  .step-list { list-style:none; padding:0; }
+  .step-list li {
+    display:flex; align-items:flex-start; gap:9px; padding:7px 0;
+    font-size:12px; color:#8b949e; border-bottom:1px solid #21262d;
+  }
+  .step-list li:last-child { border:none; }
+  .step-list .num {
+    width:20px; height:20px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:10.5px; font-weight:700; background:#30363d; color:#8b949e;
+    transition:all .3s;
+  }
+  .step-list li.active .num { background:#1f6feb; color:#fff; }
+  .step-list li.active { color:#e6edf3; }
+  .step-list li.done .num { background:#3fb950; color:#fff; }
+  .step-list li.done { color:#c9d1d9; }
+
+  .input-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+  .input-row label { font-size:11px; color:#8b949e; min-width:42px; }
+  .input-row input {
+    flex:1; padding:6px 8px; background:#0d1117; border:1px solid #30363d;
+    border-radius:6px; color:#e6edf3; font-size:12px; font-family:"Consolas",monospace;
+  }
+  .input-row input:focus { outline:none; border-color:#58a6ff; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scene-wrap">
+    <canvas id="scene"></canvas>
+
+    <div id="stepper">
+      <div class="step-item" data-step="0"><div class="num">0</div><span>原结构</span></div>
+      <div class="step-sep"></div>
+      <div class="step-item" data-step="1"><div class="num">1</div><span>切</span></div>
+      <div class="step-sep"></div>
+      <div class="step-item" data-step="2"><div class="num">2</div><span>取</span></div>
+      <div class="step-sep"></div>
+      <div class="step-item" data-step="3"><div class="num">3</div><span>标</span></div>
+      <div class="step-sep"></div>
+      <div class="step-item" data-step="4"><div class="num">4</div><span>列</span></div>
+    </div>
+
+    <div id="hint-box">
+      <div class="step-label">准备</div>
+      <div>点击右侧 <span class="hl-b">▶ 播放动画</span> 开始演示切-取-标-列四步法</div>
+    </div>
+  </div>
+
+  <div id="panel">
+    <h2><span class="dot"></span><span>弯矩求解 · 切取标列</span></h2>
+    <div id="panel-body">
+      <div class="info-block">
+        <b>四步法求弯矩</b><br>
+        <span class="hl-y">① 切</span>：在拟求内力的截面处将结构切开<br>
+        <span class="hl-b">② 取</span>：取截面一侧作为隔离体<br>
+        <span class="hl-p">③ 标</span>：在截面上标注内力（轴力N、剪力Q、弯矩M）<br>
+        <span class="hl-g">④ 列</span>：对隔离体列平衡方程 → 求解M
+      </div>
+
+      <button class="btn primary" id="btn-play">▶ 播放动画</button>
+      <button class="btn secondary" id="btn-replay">↺ 重新播放</button>
+      <button class="btn secondary" id="btn-next">下一步 →</button>
+
+      <div class="info-block">
+        <b>截面位置</b>
+        <div class="input-row">
+          <label>x =</label>
+          <input type="number" id="in-section-x" value="5.0" step="0.5" min="1" max="9">
+          <label style="min-width:16px">m</label>
+        </div>
+        <button class="btn secondary" id="btn-set-x" style="margin-top:4px">设置截面位置</button>
+      </div>
+
+      <div class="info-block">
+        <b>动画步骤</b>
+        <ul class="step-list" id="step-list">
+          <li class="active"><div class="num">0</div><div>显示原结构与外力</div></li>
+          <li><div class="num">1</div><div><b>切</b>：在截面处切开</div></li>
+          <li><div class="num">2</div><div><b>取</b>：取出左侧隔离体</div></li>
+          <li><div class="num">3</div><div><b>标</b>：标注截面内力M</div></li>
+          <li><div class="num">4</div><div><b>列</b>：列平衡方程求解M</div></li>
+        </ul>
+      </div>
+
+      <div class="info-block" id="calc-block" style="display:none">
+        <b>平衡方程求解</b>
+        <div class="formula-box" id="formula-box"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Canvas
+// ============================================================
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0;
+const SCALE = 60;
+let beamY = 0, beamX0 = 0;
+const beamLen = 10;
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = w; H = h;
+  beamY = H * 0.42;
+  beamX0 = (W - beamLen * SCALE) / 2;
+}
+window.addEventListener('resize', resize); resize();
+
+function toSx(xm) { return beamX0 + xm * SCALE; }
+function toMx(sx) { return (sx - beamX0) / SCALE; }
+
+// ============================================================
+// 结构模型：简支梁 + 两个集中力
+// ============================================================
+let sectionX = 5.0;
+const forces = [
+  { id: 1, x: 2.5, value: 10, color: '#ffd700' },
+  { id: 2, x: 7.0, value: 8, color: '#f778ba' },
+];
+
+function calcReactions() {
+  let sumPx = 0;
+  forces.forEach(f => { sumPx += f.value * f.x; });
+  const RB = sumPx / beamLen;
+  const sumP = forces.reduce((s, f) => s + f.value, 0);
+  const RA = sumP - RB;
+  return { RA, RB };
+}
+
+function calcMoment(xm) {
+  const { RA } = calcReactions();
+  let M = RA * xm;
+  forces.forEach(f => {
+    if (f.x < xm) M -= f.value * (xm - f.x);
+  });
+  return M;
+}
+
+// ============================================================
+// 动画状态
+// ============================================================
+let animStep = 0;    // 0~4
+let animProgress = 0; // 0~1 当前步骤进度
+let playing = false;
+let lastTime = 0;
+let holdTime = 0;
+const STEP_HOLD = 1.2;  // 每步停留秒数
+const STEP_DURATION = 1.0; // 动画过渡秒数
+
+const STEP_NAMES = ['原结构', '切 · 切开截面', '取 · 取出隔离体', '标 · 标注内力', '列 · 列方程求解'];
+const STEP_HINTS = [
+  { label: '准备', text: '简支梁受集中力 P₁=<span class="hl-y">10kN</span>(x=2.5m)、P₂=<span class="hl-r">8kN</span>(x=7.0m)。欲求 x=<span class="hl-b">5.0m</span> 处弯矩 M。' },
+  { label: '第一步 · 切', text: '在 x=<span class="hl-b">5.0m</span> 处用假想截面将梁<span class="hl-y">切开</span>，截面两侧可独立运动。' },
+  { label: '第二步 · 取', text: '取截面<span class="hl-b">左侧</span>为隔离体（也可取右侧，结果相同）。隔离体完全独立，需保留其上所有外力。' },
+  { label: '第三步 · 标', text: '在切开截面上标注内力：弯矩 <span class="hl-y">M</span>（设为正向，逆时针）、剪力 <span class="hl-p">Q</span>、轴力 N（本例无轴向力，N=0）。' },
+  { label: '第四步 · 列', text: '对隔离体列<span class="hl-g">力矩平衡方程</span> ΣM<sub>截面</sub> = 0，求解未知弯矩 M。' },
+];
+
+// ============================================================
+// 绘图工具
+// ============================================================
+function drawGrid() {
+  ctx.lineWidth = 1; ctx.strokeStyle = '#1c2230'; ctx.beginPath();
+  for (let x = beamX0 % SCALE; x < W; x += SCALE) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = beamY % SCALE; y < H; y += SCALE) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+}
+
+function drawArrow(x, y, dx, dy, len, color, label, width) {
+  const ex = x + dx * len, ey = y + dy * len;
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+  ctx.lineWidth = width || 2.5;
+  ctx.shadowColor = color; ctx.shadowBlur = 3;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(ex, ey); ctx.stroke();
+  const ang = Math.atan2(dy, dx);
+  const ah = 8;
+  ctx.beginPath();
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex - ah * Math.cos(ang - 0.4), ey - ah * Math.sin(ang - 0.4));
+  ctx.lineTo(ex - ah * Math.cos(ang + 0.4), ey - ah * Math.sin(ang + 0.4));
+  ctx.closePath(); ctx.fill();
+  if (label) {
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 11px "Consolas",monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, ex + dx * 16, ey + dy * 16 + 3);
+  }
+  ctx.restore();
+}
+
+function drawBeam(sx0, sx1, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+  const beamH = 14;
+  const grd = ctx.createLinearGradient(0, beamY - beamH/2, 0, beamY + beamH/2);
+  grd.addColorStop(0, '#30363d');
+  grd.addColorStop(0.5, '#484f58');
+  grd.addColorStop(1, '#30363d');
+  ctx.fillStyle = grd;
+  ctx.fillRect(sx0, beamY - beamH/2, sx1 - sx0, beamH);
+  ctx.strokeStyle = '#58a6ff';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(sx0, beamY - beamH/2, sx1 - sx0, beamH);
+
+  // 刻度
+  ctx.font = '10px "Consolas",monospace';
+  ctx.fillStyle = '#8b949e';
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= beamLen; i++) {
+    const sx = toSx(i);
+    if (sx < sx0 - 1 || sx > sx1 + 1) continue;
+    ctx.strokeStyle = '#484f58'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(sx, beamY + beamH/2); ctx.lineTo(sx, beamY + beamH/2 + 6); ctx.stroke();
+    if (i % 2 === 0) ctx.fillText(`${i}m`, sx, beamY + beamH/2 + 18);
+  }
+  ctx.restore();
+}
+
+function drawSupport(xm, type, alpha) {
+  const sx = toSx(xm), sy = beamY + 7;
+  ctx.save();
+  ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+  ctx.fillStyle = '#58a6ff';
+  // 三角形
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx - 12, sy + 18);
+  ctx.lineTo(sx + 12, sy + 18);
+  ctx.closePath(); ctx.fill();
+  if (type === 'roller') {
+    ctx.beginPath();
+    ctx.arc(sx - 7, sy + 22, 4, 0, Math.PI*2);
+    ctx.arc(sx + 7, sy + 22, 4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillRect(sx - 18, sy + 28, 36, 3);
+  } else {
+    ctx.fillRect(sx - 18, sy + 20, 36, 3);
+  }
+  // 铰
+  ctx.fillStyle = '#0d1117';
+  ctx.beginPath(); ctx.arc(sx, sy + 2, 3, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1.5; ctx.stroke();
+  // 标签
+  ctx.font = 'bold 11px "Segoe UI"';
+  ctx.fillStyle = '#58a6ff';
+  ctx.textAlign = 'center';
+  ctx.fillText(type === 'pin' ? 'A' : 'B', sx + (type === 'pin' ? -16 : 16), sy + 16);
+  ctx.restore();
+}
+
+function drawForce(f, alpha) {
+  const sx = toSx(f.x);
+  ctx.save();
+  ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+  const len = 30 + f.value * 3;
+  drawArrow(sx, beamY - 50, 0, 1, len, f.color, `P${f.id}=${f.value}kN`, 2.5);
+  ctx.restore();
+}
+
+function drawReaction(xm, value, label, alpha) {
+  if (Math.abs(value) < 0.01) return;
+  const sx = toSx(xm), sy = beamY + 7;
+  ctx.save();
+  ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+  const len = 25 + Math.abs(value) * 3;
+  drawArrow(sx, sy + 28, 0, -1, len, '#3fb950', `${label}=${value.toFixed(1)}kN`, 2.5);
+  ctx.restore();
+}
+
+// ============================================================
+// 各步骤绘制
+// ============================================================
+function drawStep0(p) {
+  // 原结构：完整梁 + 支座 + 外力 + 截面位置标记
+  drawGrid();
+  drawBeam(toSx(0), toSx(beamLen));
+  drawSupport(0, 'pin');
+  drawSupport(beamLen, 'roller');
+  forces.forEach(f => drawForce(f));
+
+  // 截面位置预览（虚线）
+  const sx = toSx(sectionX);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,215,0,0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath(); ctx.moveTo(sx, beamY - 70); ctx.lineTo(sx, beamY + 40); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = 'bold 11px "Segoe UI"';
+  ctx.fillStyle = 'rgba(255,215,0,0.6)';
+  ctx.textAlign = 'center';
+  ctx.fillText(`截面 x=${sectionX.toFixed(1)}m`, sx, beamY - 78);
+  ctx.restore();
+}
+
+function drawStep1(p) {
+  // 切：截面处切开，两侧梁微微分离
+  drawGrid();
+  const sx = toSx(sectionX);
+  const gap = p * 12; // 最大12px间隙
+
+  // 左段
+  drawBeam(toSx(0), sx - gap/2);
+  drawSupport(0, 'pin');
+  // 右段
+  drawBeam(sx + gap/2, toSx(beamLen));
+  drawSupport(beamLen, 'roller');
+
+  // 外力
+  forces.forEach(f => drawForce(f));
+
+  // 切口高亮
+  ctx.save();
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = '#ffd700';
+  ctx.shadowBlur = 8 * p;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(sx - gap/2, beamY - 30); ctx.lineTo(sx - gap/2, beamY + 25);
+  ctx.moveTo(sx + gap/2, beamY - 30); ctx.lineTo(sx + gap/2, beamY + 25);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 切口标签
+  ctx.font = 'bold 12px "Segoe UI"';
+  ctx.fillStyle = '#ffd700';
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 0;
+  ctx.fillText('切开截面', sx, beamY - 40);
+  ctx.font = '10px "Consolas",monospace';
+  ctx.fillStyle = '#8b949e';
+  ctx.fillText(`x=${sectionX.toFixed(1)}m`, sx, beamY + 38);
+  ctx.restore();
+
+  // 切口闪烁效果
+  if (p < 0.8) {
+    ctx.save();
+    ctx.globalAlpha = (1 - p / 0.8) * 0.5;
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(sx, beamY - 35); ctx.lineTo(sx, beamY + 30);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawStep2(p) {
+  // 取：左段作为隔离体向上/左移出
+  drawGrid();
+
+  // 右段变暗（保留在原位）
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  drawBeam(toSx(sectionX), toSx(beamLen));
+  drawSupport(beamLen, 'roller');
+  forces.forEach(f => { if (f.x > sectionX) drawForce(f, 0.3); });
+  ctx.restore();
+
+  // 左段隔离体（平移）
+  const offsetX = -p * 30;
+  const offsetY = -p * 40;
+  const sx = toSx(sectionX);
+
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
+
+  // 隔离体光晕
+  if (p > 0.3) {
+    ctx.save();
+    ctx.globalAlpha = (p - 0.3) * 0.3;
+    ctx.fillStyle = 'rgba(88,166,255,0.15)';
+    ctx.fillRect(toSx(0) - 15, beamY - 35, sx - toSx(0) + 30, 70);
+    ctx.restore();
+  }
+
+  drawBeam(toSx(0), sx);
+  drawSupport(0, 'pin');
+
+  // 左侧外力
+  forces.forEach(f => { if (f.x < sectionX) drawForce(f); });
+
+  // 截面切口标记
+  ctx.save();
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = '#ffd700';
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.moveTo(sx, beamY - 25); ctx.lineTo(sx, beamY + 22);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  // 波浪线表示截面
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let y = -8; y <= 8; y += 0.5) {
+    const px = sx + Math.sin(y * 0.8) * 3;
+    const py = beamY + y;
+    if (y === -8) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // 隔离体标注
+  if (p > 0.5) {
+    ctx.save();
+    ctx.globalAlpha = (p - 0.5) * 2;
+    ctx.font = 'bold 13px "Segoe UI"';
+    ctx.fillStyle = '#58a6ff';
+    ctx.textAlign = 'center';
+    const cx = (toSx(0) + sx) / 2;
+    ctx.fillText('隔离体（左侧）', cx, beamY - 60);
+    ctx.font = '10px "Segoe UI"';
+    ctx.fillStyle = '#8b949e';
+    ctx.fillText(`长度 = ${sectionX.toFixed(1)}m`, cx, beamY - 45);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawStep3(p) {
+  // 标：在截面上标注内力 M, Q
+  drawGrid();
+
+  // 右段暗淡
+  ctx.save();
+  ctx.globalAlpha = 0.2;
+  drawBeam(toSx(sectionX), toSx(beamLen));
+  drawSupport(beamLen, 'roller');
+  ctx.restore();
+
+  // 左段隔离体
+  const offsetX = -30, offsetY = -40;
+  const sx = toSx(sectionX);
+  const { RA } = calcReactions();
+
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
+
+  // 隔离体光晕
+  ctx.fillStyle = 'rgba(88,166,255,0.08)';
+  ctx.fillRect(toSx(0) - 15, beamY - 35, sx - toSx(0) + 30, 70);
+
+  drawBeam(toSx(0), sx);
+  drawSupport(0, 'pin');
+  forces.forEach(f => { if (f.x < sectionX) drawForce(f); });
+  drawReaction(0, RA, 'RA');
+
+  // 截面波浪线
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let y = -8; y <= 8; y += 0.5) {
+    const px = sx + Math.sin(y * 0.8) * 3;
+    const py = beamY + y;
+    if (y === -8) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // 标注弯矩 M（逆时针弧形箭头）
+  if (p > 0.1) {
+    const mp = Math.min(1, (p - 0.1) / 0.4);
+    ctx.save();
+    ctx.globalAlpha = mp;
+    const r = 22;
+    ctx.strokeStyle = '#ffd700';
+    ctx.fillStyle = '#ffd700';
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.arc(sx, beamY, r, -Math.PI * 0.75, Math.PI * 0.75, false);
+    ctx.stroke();
+    // 箭头
+    const ea = Math.PI * 0.75;
+    const ax = sx + r * Math.cos(ea), ay = beamY + r * Math.sin(ea);
+    const tang = ea + Math.PI / 2;
+    const ah = 7;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax - ah * Math.cos(tang - 0.4), ay - ah * Math.sin(tang - 0.4));
+    ctx.lineTo(ax - ah * Math.cos(tang + 0.4), ay - ah * Math.sin(tang + 0.4));
+    ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 14px "Segoe UI"';
+    ctx.textAlign = 'center';
+    ctx.fillText('M', sx, beamY - r - 8);
+    ctx.font = '9px "Segoe UI"';
+    ctx.fillStyle = '#8b949e';
+    ctx.fillText('(设正:逆时针)', sx, beamY - r - 20);
+    ctx.restore();
+  }
+
+  // 标注剪力 Q（向上箭头）
+  if (p > 0.4) {
+    const qp = Math.min(1, (p - 0.4) / 0.4);
+    ctx.save();
+    ctx.globalAlpha = qp;
+    drawArrow(sx + 8, beamY + 25, 0, -1, 28, '#a371f7', 'Q', 2);
+    ctx.restore();
+  }
+
+  // 标注轴力 N = 0
+  if (p > 0.6) {
+    const np = Math.min(1, (p - 0.6) / 0.4);
+    ctx.save();
+    ctx.globalAlpha = np;
+    ctx.font = '10px "Consolas",monospace';
+    ctx.fillStyle = '#484f58';
+    ctx.textAlign = 'center';
+    ctx.fillText('N=0', sx - 14, beamY + 4);
+    ctx.restore();
+  }
+
+  // 隔离体标注
+  ctx.font = 'bold 13px "Segoe UI"';
+  ctx.fillStyle = '#58a6ff';
+  ctx.textAlign = 'center';
+  ctx.fillText('隔离体（左侧）', (toSx(0) + sx) / 2, beamY - 60);
+
+  ctx.restore();
+}
+
+function drawStep4(p) {
+  // 列：显示平衡方程
+  drawGrid();
+
+  // 右段暗淡
+  ctx.save();
+  ctx.globalAlpha = 0.15;
+  drawBeam(toSx(sectionX), toSx(beamLen));
+  drawSupport(beamLen, 'roller');
+  ctx.restore();
+
+  const offsetX = -30, offsetY = -40;
+  const sx = toSx(sectionX);
+  const { RA } = calcReactions();
+  const M = calcMoment(sectionX);
+
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
+
+  // 隔离体
+  ctx.fillStyle = 'rgba(88,166,255,0.06)';
+  ctx.fillRect(toSx(0) - 15, beamY - 35, sx - toSx(0) + 30, 70);
+  drawBeam(toSx(0), sx);
+  drawSupport(0, 'pin');
+  forces.forEach(f => { if (f.x < sectionX) drawForce(f); });
+  drawReaction(0, RA, 'RA');
+
+  // 截面波浪线
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let y = -8; y <= 8; y += 0.5) {
+    const px = sx + Math.sin(y * 0.8) * 3;
+    const py = beamY + y;
+    if (y === -8) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // 弯矩M (已求出，高亮)
+  ctx.save();
+  const r = 22;
+  ctx.strokeStyle = '#3fb950';
+  ctx.fillStyle = '#3fb950';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = '#3fb950'; ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.arc(sx, beamY, r, -Math.PI * 0.75, Math.PI * 0.75, false);
+  ctx.stroke();
+  const ea = Math.PI * 0.75;
+  const ax = sx + r * Math.cos(ea), ay = beamY + r * Math.sin(ea);
+  const tang = ea + Math.PI / 2;
+  const ah = 7;
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(ax - ah * Math.cos(tang - 0.4), ay - ah * Math.sin(tang - 0.4));
+  ctx.lineTo(ax - ah * Math.cos(tang + 0.4), ay - ah * Math.sin(tang + 0.4));
+  ctx.closePath(); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.font = 'bold 15px "Segoe UI"';
+  ctx.textAlign = 'center';
+  ctx.fillText(`M=${M.toFixed(1)}`, sx, beamY - r - 8);
+  ctx.restore();
+
+  // 力臂标注（虚线）
+  if (p > 0.2) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, (p - 0.2) * 3);
+    ctx.strokeStyle = 'rgba(88,166,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    // RA力臂
+    ctx.beginPath();
+    ctx.moveTo(toSx(0), beamY + 30);
+    ctx.lineTo(sx, beamY + 30);
+    ctx.stroke();
+    // P1力臂
+    forces.forEach(f => {
+      if (f.x < sectionX) {
+        ctx.beginPath();
+        ctx.moveTo(toSx(f.x), beamY - 55);
+        ctx.lineTo(sx, beamY - 55);
+        ctx.stroke();
+      }
+    });
+    ctx.setLineDash([]);
+    ctx.font = '9px "Consolas",monospace';
+    ctx.fillStyle = '#58a6ff';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${sectionX.toFixed(1)}m`, (toSx(0) + sx) / 2, beamY + 44);
+    forces.forEach(f => {
+      if (f.x < sectionX) {
+        ctx.fillText(`${(sectionX - f.x).toFixed(1)}m`, (toSx(f.x) + sx) / 2, beamY - 60);
+      }
+    });
+    ctx.restore();
+  }
+
+  // 隔离体标注
+  ctx.font = 'bold 13px "Segoe UI"';
+  ctx.fillStyle = '#58a6ff';
+  ctx.textAlign = 'center';
+  ctx.fillText('隔离体（左侧）', (toSx(0) + sx) / 2, beamY - 60);
+
+  ctx.restore();
+
+  // 方程浮层（在画布上方显示）
+  if (p > 0.3) {
+    const ep = Math.min(1, (p - 0.3) / 0.5);
+    ctx.save();
+    ctx.globalAlpha = ep;
+    const boxW = 360, boxH = 100;
+    const bx = (W - boxW) / 2, by = H - 160;
+
+    ctx.fillStyle = 'rgba(22,27,34,0.95)';
+    ctx.strokeStyle = '#3fb950';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, boxW, boxH, 10);
+    ctx.fill(); ctx.stroke();
+
+    ctx.font = 'bold 12px "Segoe UI"';
+    ctx.fillStyle = '#3fb950';
+    ctx.textAlign = 'left';
+    ctx.fillText('④ 列平衡方程：ΣM截面 = 0', bx + 14, by + 22);
+
+    ctx.font = '12px "Consolas",monospace';
+    ctx.fillStyle = '#c9d1d9';
+    let eq1 = `  RA×${sectionX.toFixed(1)}`;
+    forces.forEach(f => {
+      if (f.x < sectionX) eq1 += ` − P${f.id}×${(sectionX - f.x).toFixed(1)}`;
+    });
+    eq1 += ` − M = 0`;
+    ctx.fillText(eq1, bx + 14, by + 44);
+
+    let eq2 = `  ${RA.toFixed(1)}×${sectionX.toFixed(1)}`;
+    forces.forEach(f => {
+      if (f.x < sectionX) eq2 += ` − ${f.value}×${(sectionX - f.x).toFixed(1)}`;
+    });
+    eq2 += ` = M`;
+    ctx.fillText(eq2, bx + 14, by + 64);
+
+    ctx.font = 'bold 14px "Consolas",monospace';
+    ctx.fillStyle = '#3fb950';
+    ctx.fillText(`  M = ${M.toFixed(1)} kN·m`, bx + 14, by + 88);
+
+    ctx.restore();
+  }
+}
+
+// ============================================================
+// 主渲染
+// ============================================================
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  switch (animStep) {
+    case 0: drawStep0(animProgress); break;
+    case 1: drawStep1(animProgress); break;
+    case 2: drawStep2(animProgress); break;
+    case 3: drawStep3(animProgress); break;
+    case 4: drawStep4(animProgress); break;
+  }
+  updateUI();
+}
+
+// ============================================================
+// 动画控制
+// ============================================================
+function startPlay() {
+  animStep = 0;
+  animProgress = 0;
+  playing = true;
+  lastTime = performance.now();
+  holdTime = 0;
+}
+
+function nextStep() {
+  if (animStep < 4) {
+    animStep++;
+    animProgress = 0;
+    holdTime = 0;
+    updateStepper();
+    updateStepList();
+    updateHint();
+  } else {
+    playing = false;
+  }
+}
+
+function resetAnim() {
+  animStep = 0;
+  animProgress = 0;
+  playing = false;
+  holdTime = 0;
+  updateStepper();
+  updateStepList();
+  updateHint();
+}
+
+function animate(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  if (playing) {
+    if (animProgress < 1) {
+      animProgress += dt / STEP_DURATION;
+      if (animProgress > 1) animProgress = 1;
+    } else {
+      holdTime += dt;
+      if (holdTime > STEP_HOLD) {
+        holdTime = 0;
+        if (animStep < 4) {
+          nextStep();
+        } else {
+          playing = false;
+        }
+      }
+    }
+  }
+
+  render();
+  requestAnimationFrame(animate);
+}
+
+// ============================================================
+// UI 更新
+// ============================================================
+function updateStepper() {
+  document.querySelectorAll('.step-item').forEach((el, i) => {
+    el.classList.remove('active', 'done');
+    if (i < animStep) el.classList.add('done');
+    else if (i === animStep) el.classList.add('active');
+  });
+}
+
+function updateStepList() {
+  document.querySelectorAll('#step-list li').forEach((el, i) => {
+    el.classList.remove('active', 'done');
+    if (i < animStep) el.classList.add('done');
+    else if (i === animStep) el.classList.add('active');
+  });
+}
+
+function updateHint() {
+  const hint = document.getElementById('hint-box');
+  if (animStep < 0 || animStep >= STEP_HINTS.length) return;
+  const h = STEP_HINTS[animStep];
+  hint.innerHTML = `<div class="step-label">${h.label}</div><div>${h.text}</div>`;
+}
+
+function updateUI() {
+  // 步骤4显示方程
+  const calcBlock = document.getElementById('calc-block');
+  if (animStep >= 4) {
+    calcBlock.style.display = 'block';
+    const { RA } = calcReactions();
+    const M = calcMoment(sectionX);
+    let terms = `<span class="step">ΣM截面 = 0:</span><br>`;
+    terms += `<span class="lbl">方程:</span> RA×${sectionX.toFixed(1)}`;
+    forces.forEach(f => {
+      if (f.x < sectionX) terms += ` <span class="op">−</span> P${f.id}×${(sectionX - f.x).toFixed(1)}`;
+    });
+    terms += ` <span class="op">−</span> <span class="var">M</span> = 0<br>`;
+    terms += `<span class="lbl">代入:</span> ${RA.toFixed(1)}×${sectionX.toFixed(1)}`;
+    forces.forEach(f => {
+      if (f.x < sectionX) terms += ` <span class="op">−</span> ${f.value}×${(sectionX - f.x).toFixed(1)}`;
+    });
+    terms += ` = <span class="var">M</span><br>`;
+    terms += `<span class="lbl">结果:</span> <span class="var">M</span> = <span class="res">${M.toFixed(1)} kN·m</span>`;
+    terms += M > 0 ? ` <span class="res">(正，梁下侧受拉)</span>` : ` <span class="res">(负，梁上侧受拉)</span>`;
+    document.getElementById('formula-box').innerHTML = terms;
+  } else {
+    calcBlock.style.display = 'none';
+  }
+}
+
+// ============================================================
+// 事件
+// ============================================================
+document.getElementById('btn-play').addEventListener('click', () => {
+  if (!playing) {
+    if (animStep >= 4 && animProgress >= 1) {
+      resetAnim();
+      setTimeout(startPlay, 100);
+    } else {
+      startPlay();
+    }
+  }
+});
+
+document.getElementById('btn-replay').addEventListener('click', () => {
+  resetAnim();
+  setTimeout(startPlay, 100);
+});
+
+document.getElementById('btn-next').addEventListener('click', () => {
+  if (animStep < 4) {
+    if (animProgress < 1) {
+      animProgress = 1;
+    } else {
+      nextStep();
+    }
+  }
+});
+
+document.getElementById('btn-set-x').addEventListener('click', () => {
+  const x = parseFloat(document.getElementById('in-section-x').value);
+  if (!isNaN(x) && x > 0.5 && x < beamLen - 0.5) {
+    sectionX = x;
+    resetAnim();
+  }
+});
+
+document.querySelectorAll('.step-item').forEach(el => {
+  el.addEventListener('click', () => {
+    const step = parseInt(el.dataset.step);
+    animStep = step;
+    animProgress = 1;
+    playing = false;
+    updateStepper();
+    updateStepList();
+    updateHint();
+  });
+});
+
+// roundRect polyfill
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    this.beginPath();
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+  };
+}
+
+// 初始化
+updateStepper();
+updateStepList();
+updateHint();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

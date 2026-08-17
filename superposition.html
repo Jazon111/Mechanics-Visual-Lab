@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>弯矩叠加法 · 叠加原理可视化</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #0d1117; color: #e6edf3; overflow: hidden; }
+  #app { display: flex; height: 100vh; }
+
+  #scene-wrap { flex:1; position:relative; overflow:hidden; background: radial-gradient(circle at 50% 50%, #1b2433 0%, #0a0e16 75%); }
+  #scene { position:absolute; top:0; left:0; width:100%; height:100%; display:block; }
+
+  /* 顶部步骤 */
+  #stepper {
+    position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:11;
+    display:flex; gap:8px; background:rgba(22,27,34,0.9);
+    padding:8px 16px; border-radius:14px; border:1px solid #30363d; backdrop-filter:blur(8px);
+  }
+  .step-item {
+    display:flex; align-items:center; gap:6px; padding:4px 12px; border-radius:8px;
+    font-size:12.5px; font-weight:600; color:#484f58; transition:all .35s; cursor:pointer;
+  }
+  .step-item .num {
+    width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:800; background:#30363d; color:#8b949e; transition:all .35s;
+  }
+  .step-item.active { color:#e6edf3; }
+  .step-item.active .num { background:#1f6feb; color:#fff; box-shadow:0 0 10px rgba(31,111,235,.6); }
+  .step-item.done { color:#3fb950; }
+  .step-item.done .num { background:#3fb950; color:#fff; }
+  .step-sep { width:16px; height:2px; background:#30363d; border-radius:1px; align-self:center; position:relative; }
+  .step-sep::after { content:'='; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); color:#8b949e; font-size:11px; }
+  .step-sep.plus::after { content:'+'; }
+
+  #hint-box {
+    position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:10;
+    background:rgba(22,27,34,0.92); border:1px solid #30363d;
+    padding:12px 26px; border-radius:12px; backdrop-filter:blur(8px);
+    font-size:14px; color:#e6edf3; text-align:center; min-width:360px; max-width:680px;
+  }
+  #hint-box .step-label { font-size:11px; color:#8b949e; letter-spacing:2px; margin-bottom:4px; }
+  #hint-box .hl-y { color:#ffd700; font-weight:600; }
+  #hint-box .hl-b { color:#58a6ff; font-weight:600; }
+  #hint-box .hl-g { color:#3fb950; font-weight:600; }
+  #hint-box .hl-r { color:#f85149; font-weight:600; }
+  #hint-box .hl-p { color:#a371f7; font-weight:600; }
+
+  /* 公式栏 */
+  #formula-bar {
+    position:absolute; top:68px; left:50%; transform:translateX(-50%); z-index:10;
+    background:rgba(22,27,34,0.92); border:1px solid #30363d;
+    padding:8px 20px; border-radius:10px; backdrop-filter:blur(8px);
+    font-family:"Consolas",monospace; font-size:13px; color:#c9d1d9;
+  }
+  #formula-bar .var { color:#a371f7; font-weight:600; }
+  #formula-bar .op { color:#58a6ff; }
+  #formula-bar .res { color:#3fb950; font-weight:700; }
+
+  #panel {
+    width:320px; background:#161b22; border-left:1px solid #30363d;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  #panel h2 {
+    padding:14px 16px; font-size:14.5px; color:#e6edf3;
+    border-bottom:1px solid #30363d; display:flex; align-items:center; gap:8px;
+  }
+  #panel h2 .dot { width:8px; height:8px; border-radius:50%; background:#ffd700; box-shadow:0 0 8px #ffd700; }
+  #panel-body { flex:1; overflow-y:auto; padding:12px 14px; }
+  #panel-body::-webkit-scrollbar { width:5px; }
+  #panel-body::-webkit-scrollbar-thumb { background:#30363d; border-radius:3px; }
+
+  .btn {
+    width:100%; padding:9px; border:none; border-radius:8px; cursor:pointer;
+    font-size:13px; font-weight:600; transition:all .2s; margin-bottom:6px;
+  }
+  .btn.primary { background:#1f6feb; color:#fff; }
+  .btn.primary:hover { background:#388bfd; }
+  .btn.secondary { background:#21262d; color:#c9d1d9; border:1px solid #30363d; }
+  .btn.secondary:hover { background:#30363d; color:#fff; }
+
+  .info-block {
+    padding:11px; background:#0d1117; border:1px solid #21262d;
+    border-radius:10px; margin-bottom:11px; font-size:12px; line-height:1.7; color:#8b949e;
+  }
+  .info-block b { color:#c9d1d9; }
+  .info-block .hl-b { color:#58a6ff; font-weight:600; }
+  .info-block .hl-y { color:#ffd700; font-weight:600; }
+  .info-block .hl-g { color:#3fb950; font-weight:600; }
+  .info-block .hl-r { color:#f85149; font-weight:600; }
+  .info-block .hl-p { color:#a371f7; font-weight:600; }
+
+  .formula-box {
+    font-family:"Consolas",monospace; font-size:12px; color:#c9d1d9;
+    background:rgba(163,113,247,0.06); padding:9px 12px; border-radius:8px;
+    border:1px solid rgba(163,113,247,0.15); margin:6px 0; line-height:1.9;
+  }
+  .formula-box .lbl { color:#8b949e; font-size:11px; }
+  .formula-box .var { color:#a371f7; font-weight:600; }
+  .formula-box .op { color:#58a6ff; }
+  .formula-box .res { color:#3fb950; font-weight:700; }
+  .formula-box .y { color:#ffd700; }
+  .formula-box .r { color:#f85149; font-weight:600; }
+  .formula-box .step { color:#58a6ff; font-size:11px; font-weight:600; }
+
+  .step-list { list-style:none; padding:0; }
+  .step-list li {
+    display:flex; align-items:flex-start; gap:9px; padding:7px 0;
+    font-size:12px; color:#8b949e; border-bottom:1px solid #21262d;
+  }
+  .step-list li:last-child { border:none; }
+  .step-list .num {
+    width:20px; height:20px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:10.5px; font-weight:700; background:#30363d; color:#8b949e;
+    transition:all .3s;
+  }
+  .step-list li.active .num { background:#1f6feb; color:#fff; }
+  .step-list li.active { color:#e6edf3; }
+  .step-list li.done .num { background:#3fb950; color:#fff; }
+  .step-list li.done { color:#c9d1d9; }
+
+  .input-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+  .input-row label { font-size:11px; color:#8b949e; min-width:48px; }
+  .input-row input {
+    flex:1; padding:6px 8px; background:#0d1117; border:1px solid #30363d;
+    border-radius:6px; color:#e6edf3; font-size:12px; font-family:"Consolas",monospace;
+  }
+  .input-row input:focus { outline:none; border-color:#58a6ff; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scene-wrap">
+    <canvas id="scene"></canvas>
+
+    <div id="stepper">
+      <div class="step-item" data-step="0"><div class="num">0</div><span>原结构</span></div>
+      <div class="step-sep"></div>
+      <div class="step-item" data-step="1"><div class="num">①</div><span>力偶单独作用</span></div>
+      <div class="step-sep plus"></div>
+      <div class="step-item" data-step="2"><div class="num">②</div><span>均布荷载单独</span></div>
+      <div class="step-sep"></div>
+      <div class="step-item" data-step="3"><div class="num">Σ</div><span>叠加合成</span></div>
+    </div>
+
+    <div id="formula-bar">
+      M<span class="var">总</span>(x) <span class="op">=</span> M<span class="r">₁</span>(x) <span class="op">+</span> M<span class="y">₂</span>(x) &nbsp; <span class="res">（叠加原理）</span>
+    </div>
+
+    <div id="hint-box">
+      <div class="step-label">叠加原理</div>
+      <div>AB梁的内力等于两组荷载下内力的<span class="hl-p">叠加</span>。点击 ▶ 播放动画，观察弯矩图如何叠加。</div>
+    </div>
+  </div>
+
+  <div id="panel">
+    <h2><span class="dot"></span><span>弯矩叠加法</span></h2>
+    <div id="panel-body">
+      <div class="info-block">
+        <b>叠加原理</b><br>
+        多种荷载同时作用下的内力 = <span class="hl-r">各荷载单独作用</span>下内力的<span class="hl-p">代数和</span>。<br>
+        <br>
+        本图中简支梁AB承受：<br>
+        · 两端集中力偶 <span class="hl-r">M_A</span>、<span class="hl-r">M_B</span>（使梁上侧受拉）<br>
+        · 均布荷载 <span class="hl-y">q</span>（使梁下侧受拉）<br>
+        <br>
+        <span class="step">最终弯矩 = <span class="hl-r">力偶弯矩图①</span> + <span class="hl-y">均布荷载弯矩图②</span></span>
+      </div>
+
+      <button class="btn primary" id="btn-play">▶ 播放叠加动画</button>
+      <button class="btn secondary" id="btn-replay">↺ 重新播放</button>
+      <button class="btn secondary" id="btn-next">下一步 →</button>
+
+      <div class="info-block">
+        <b>荷载参数</b>
+        <div class="input-row">
+          <label>梁长 l =</label>
+          <input type="number" id="in-l" value="10" step="1" min="4" max="15">
+          <label style="min-width:16px">m</label>
+        </div>
+        <div class="input-row">
+          <label>M_A =</label>
+          <input type="number" id="in-ma" value="20" step="5" min="0">
+          <label style="min-width:16px">kN·m</label>
+        </div>
+        <div class="input-row">
+          <label>M_B =</label>
+          <input type="number" id="in-mb" value="10" step="5" min="0">
+          <label style="min-width:16px">kN·m</label>
+        </div>
+        <div class="input-row">
+          <label>q =</label>
+          <input type="number" id="in-q" value="4" step="0.5" min="0">
+          <label style="min-width:16px">kN/m</label>
+        </div>
+        <button class="btn secondary" id="btn-apply" style="margin-top:4px">应用参数</button>
+      </div>
+
+      <div class="info-block">
+        <b>动画步骤</b>
+        <ul class="step-list" id="step-list">
+          <li class="active"><div class="num">0</div><div>原结构与合成弯矩图</div></li>
+          <li><div class="num">①</div><div>力偶单独作用 → 直线弯矩图</div></li>
+          <li><div class="num">②</div><div>均布荷载单独 → 抛物线弯矩图</div></li>
+          <li><div class="num">Σ</div><div>两图叠加：逐点代数相加</div></li>
+        </ul>
+      </div>
+
+      <div class="info-block">
+        <b>叠加过程示例 (x = l/2)</b>
+        <div class="formula-box" id="formula-box"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Canvas
+// ============================================================
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0;
+let SCALE = 55; // 每米像素
+let beamY = 0, beamX0 = 0;
+let L = 10; // 梁长
+
+// 荷载参数
+let MA = 20; // 力偶A (kN·m) 逆时针 → 梁上侧受拉
+let MB = 10; // 力偶B (kN·m) 逆时针 → 梁上侧受拉
+let q = 4;   // 均布荷载 (kN/m)
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = w; H = h;
+  SCALE = Math.min(65, Math.max(45, (W - 200) / L));
+  beamY = H * 0.44;
+  beamX0 = (W - L * SCALE) / 2;
+}
+window.addEventListener('resize', resize); resize();
+
+function toSx(xm) { return beamX0 + xm * SCALE; }
+
+// ============================================================
+// 弯矩计算
+// ============================================================
+// 简支梁两端铰支座反力
+// 情况1：两端力偶单独作用
+// ΣM_A = 0: RB×L + MA - MB = 0 → RB = (MB - MA)/L  (向上为正)
+// RA = -RB (因为没有竖向荷载)
+function calcReactions1() {
+  const RB = (MB - MA) / L;
+  const RA = -RB;
+  return { RA, RB };
+}
+// M1(x) = MA + RA×x  (MA逆时针对梁=上侧受拉，按惯例我们取上侧为负，下侧为正？)
+// 符号约定：正弯矩画梁下侧（下侧受拉）
+// MA 逆时针作用在A端（左端），会使梁上侧受拉 → M1(0) = -MA
+// MB 逆时针作用在B端（右端），从左侧隔离体看，会使梁下侧受拉吗？
+// 重新分析：对于简支梁，如果左端作用逆时针MA（对梁而言），则梁A端弯矩使梁上侧受拉 → 负
+// B端逆时针MB: 取左侧隔离体，MB作用在右端对截面取矩 → 如果是逆时针，从梁右侧看 → 右侧反力顺时针
+// 更好的方法：使用反力计算
+// ΣM_A = 0: -MA + MB + RB×L = 0 → RB = (MA - MB)/L  (向上为正)
+// 实际上简支梁的力偶平衡: 如果 MA=MB 且都是逆时针，则竖向反力为0
+// 弯矩 M1(x) = -MA + RA×x (x从A到B)
+// 在 x=0: M1(0) = -MA ✓
+// 在 x=L: M1(L) = -MA + RA×L  应该等于 -MB
+// 所以需要 -MA + RA×L = -MB → RA = (MA - MB)/L
+// 则 RB = -RA = (MB - MA)/L  ✓ 与整体平衡ΣFy=0一致
+function M1(x) {
+  const RA = (MA - MB) / L;
+  return -MA + RA * x; // 上侧受拉为负
+}
+
+// 情况2：均布荷载单独作用
+// 简支梁均布荷载: RA = RB = qL/2
+// M2(x) = RA×x - q×x²/2 = qLx/2 - qx²/2 = qx(L-x)/2
+// 跨中 x=L/2: M2_max = qL²/8 (正，下侧受拉)
+function M2(x) {
+  const RA = q * L / 2;
+  return RA * x - q * x * x / 2;
+}
+
+// 总弯矩
+function MTotal(x) { return M1(x) + M2(x); }
+
+// ============================================================
+// 动画状态
+// ============================================================
+let animStep = 0; // 0:原结构, 1:力偶单独, 2:均布单独, 3:叠加
+let animProgress = 0; // 0~1
+let playing = false;
+let lastTime = 0;
+let holdTime = 0;
+const STEP_HOLD = 1.5;
+const STEP_DURATION = 1.2;
+
+const STEP_HINTS = [
+  { label: '原结构', text: '简支梁AB同时受两端力偶 M<sub>A</sub>、M<sub>B</sub> 和均布荷载 q，合成弯矩图为代数叠加结果。' },
+  { label: '情况① · 力偶单独作用', text: '仅考虑两端力偶 M<sub>A</sub>、M<sub>B</sub>，无均布荷载。弯矩图是<span class="hl-r">连接 -M_A 到 -M_B 的直线</span>（上侧受拉，画在梁上方）。' },
+  { label: '情况② · 均布荷载单独作用', text: '仅考虑均布荷载 q，无两端力偶。弯矩图是<span class="hl-y">对称抛物线</span>，跨中最大值 M<sub>max</sub>=ql²/8（下侧受拉，画在梁下方）。' },
+  { label: '叠加合成 · M₁+M₂', text: '逐点将两弯矩图<span class="hl-p">代数相加</span>：M总(x)=M₁(x)+M₂(x)。注意正、负相消后的最终弯矩分布！' },
+];
+
+// ============================================================
+// 绘图工具
+// ============================================================
+function drawGrid() {
+  ctx.lineWidth = 1; ctx.strokeStyle = '#1c2230'; ctx.beginPath();
+  for (let x = beamX0 % SCALE; x < W; x += SCALE) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = beamY % 30; y < H; y += 30) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+}
+
+function drawArrow(x, y, dx, dy, len, color, label, lw) {
+  const ex = x + dx * len, ey = y + dy * len;
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+  ctx.lineWidth = lw || 2.5;
+  ctx.shadowColor = color; ctx.shadowBlur = 3;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(ex, ey); ctx.stroke();
+  const ang = Math.atan2(dy, dx);
+  const ah = 8;
+  ctx.beginPath();
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex - ah * Math.cos(ang - 0.4), ey - ah * Math.sin(ang - 0.4));
+  ctx.lineTo(ex - ah * Math.cos(ang + 0.4), ey - ah * Math.sin(ang + 0.4));
+  ctx.closePath(); ctx.fill();
+  if (label) {
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 11px "Consolas",monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, ex + dx * 16, ey + dy * 16 + 3);
+  }
+  ctx.restore();
+}
+
+// 画弧形力偶箭头
+function drawCoupleArrow(xm, onTop, mag, color, label) {
+  const sx = toSx(xm), cy = onTop ? beamY - 20 : beamY + 20;
+  const r = 14;
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+  ctx.lineWidth = 2.2;
+  ctx.shadowColor = color; ctx.shadowBlur = 5;
+  const dir = onTop ? -1 : 1; // onTop=true: 逆时针 arc从右下到左下
+  let startA, endA, ccw;
+  if (onTop) { // 梁上方，逆时针
+    startA = Math.PI * 0.1; endA = Math.PI * 0.9; ccw = false;
+  } else { // 梁下方，顺时针
+    startA = -Math.PI * 0.1; endA = -Math.PI * 0.9; ccw = true;
+  }
+  ctx.beginPath();
+  ctx.arc(sx, cy, r, startA, endA, ccw);
+  ctx.stroke();
+  // 箭头
+  const ea = endA;
+  const ax = sx + r * Math.cos(ea), ay = cy + r * Math.sin(ea);
+  const tang = onTop ? (ea + Math.PI/2) : (ea - Math.PI/2);
+  const ah = 6;
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(ax - ah * Math.cos(tang - 0.4), ay - ah * Math.sin(tang - 0.4));
+  ctx.lineTo(ax - ah * Math.cos(tang + 0.4), ay - ah * Math.sin(tang + 0.4));
+  ctx.closePath(); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.font = 'bold 12px "Consolas",monospace';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.fillText(label, sx, onTop ? cy - r - 6 : cy + r + 16);
+  ctx.restore();
+}
+
+// 画均布荷载
+function drawUniformLoad(x0, x1, qval, yoff, color, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha || 1;
+  const s0 = toSx(x0), s1 = toSx(x1);
+  const cnt = Math.floor((s1 - s0) / 12);
+  const spacing = (s1 - s0) / cnt;
+  // 顶部分布连线
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(s0, beamY - 30 + (yoff || 0));
+  ctx.lineTo(s1, beamY - 30 + (yoff || 0));
+  ctx.stroke();
+  // 每个箭头
+  for (let i = 0; i <= cnt; i++) {
+    const x = s0 + i * spacing;
+    drawArrow(x, beamY - 30 + (yoff || 0), 0, 1, 18, color, null, 1.5);
+  }
+  // 标签
+  ctx.font = 'bold 12px "Consolas",monospace';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.fillText(`q=${qval}kN/m`, (s0 + s1) / 2, beamY - 44 + (yoff || 0));
+  ctx.restore();
+}
+
+// 画梁
+function drawBeam(sx0, sx1, alpha, labelY) {
+  ctx.save();
+  ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+  const beamH = 14;
+  const grd = ctx.createLinearGradient(0, beamY - beamH/2, 0, beamY + beamH/2);
+  grd.addColorStop(0, '#30363d');
+  grd.addColorStop(0.5, '#484f58');
+  grd.addColorStop(1, '#30363d');
+  ctx.fillStyle = grd;
+  ctx.fillRect(sx0, beamY - beamH/2, sx1 - sx0, beamH);
+  ctx.strokeStyle = '#58a6ff';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(sx0, beamY - beamH/2, sx1 - sx0, beamH);
+  // 刻度
+  ctx.font = '10px "Consolas",monospace';
+  ctx.fillStyle = '#8b949e';
+  ctx.textAlign = 'center';
+  ctx.strokeStyle = '#484f58'; ctx.lineWidth = 1;
+  for (let i = 0; i <= L; i++) {
+    if (i % 2 === 0) {
+      const sx = toSx(i);
+      ctx.beginPath(); ctx.moveTo(sx, beamY + beamH/2); ctx.lineTo(sx, beamY + beamH/2 + 6); ctx.stroke();
+      ctx.fillText(`${i}m`, sx, beamY + beamH/2 + 18);
+    }
+  }
+  // 梁长标注
+  if (labelY !== undefined) {
+    ctx.strokeStyle = '#8b949e';
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(sx0, labelY); ctx.lineTo(sx1, labelY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = '11px "Consolas",monospace';
+    ctx.fillStyle = '#c9d1d9';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#c9d1d9';
+    const cx = (sx0 + sx1) / 2;
+    // 两侧竖线
+    ctx.beginPath();
+    ctx.moveTo(sx0, labelY - 5); ctx.lineTo(sx0, labelY + 5);
+    ctx.moveTo(sx1, labelY - 5); ctx.lineTo(sx1, labelY + 5);
+    ctx.stroke();
+    ctx.fillText(`l = ${L}m`, cx, labelY - 8);
+  }
+  ctx.restore();
+}
+
+// 画支座
+function drawSupport(xm, type, alpha) {
+  const sx = toSx(xm), sy = beamY + 7;
+  ctx.save();
+  ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+  ctx.fillStyle = '#58a6ff';
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx - 12, sy + 18);
+  ctx.lineTo(sx + 12, sy + 18);
+  ctx.closePath(); ctx.fill();
+  if (type === 'roller') {
+    ctx.beginPath();
+    ctx.arc(sx - 7, sy + 22, 4, 0, Math.PI*2);
+    ctx.arc(sx + 7, sy + 22, 4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillRect(sx - 18, sy + 28, 36, 3);
+  } else {
+    ctx.fillRect(sx - 18, sy + 20, 36, 3);
+  }
+  ctx.fillStyle = '#0d1117';
+  ctx.beginPath(); ctx.arc(sx, sy + 2, 3, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.font = 'bold 11px "Segoe UI"';
+  ctx.fillStyle = '#58a6ff';
+  ctx.textAlign = 'center';
+  ctx.fillText(type === 'pin' ? 'A' : 'B', sx + (type === 'pin' ? -18 : 18), sy + 16);
+  ctx.restore();
+}
+
+// 绘制弯矩图
+// fn: 弯矩函数, color: 颜色, baseX, baseY: 基线(梁), scale: 弯矩像素比例,
+// alpha: 透明度, offsetX/offsetY: 整体偏移, fill: 是否填充,
+// onTopOverride: 强制画在上方/下方, null=自动
+function drawMomentDiagram(fn, color, opts) {
+  opts = opts || {};
+  const mScale = opts.mScale || 3.0; // 1kN·m = 3px
+  const alpha = opts.alpha !== undefined ? opts.alpha : 1;
+  const offX = opts.offX || 0;
+  const offY = opts.offY || 0;
+  const fill = opts.fill !== false;
+  const lineW = opts.lineW || 2.5;
+  const label = opts.label;
+  const showValues = opts.showValues;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(offX, offY);
+
+  const N = 120;
+  const pts = [];
+  for (let i = 0; i <= N; i++) {
+    const x = (i / N) * L;
+    const M = fn(x);
+    // 正弯矩画在梁下侧(M>0 → y更大), 负弯矩画上方(M<0 → y更小)
+    pts.push({ x, M, sx: toSx(x), sy: beamY - M * mScale });
+  }
+
+  // 填充
+  if (fill) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].sx, beamY);
+    pts.forEach(p => ctx.lineTo(p.sx, p.sy));
+    ctx.lineTo(pts[pts.length-1].sx, beamY);
+    ctx.closePath();
+    // 渐变填充
+    ctx.fillStyle = color + '22';
+    ctx.fill();
+    // 斜线阴影线
+    ctx.save();
+    ctx.clip();
+    ctx.strokeStyle = color + '44';
+    ctx.lineWidth = 0.8;
+    for (let sx0 = toSx(0) - 200; sx0 < toSx(L) + 200; sx0 += 10) {
+      ctx.beginPath();
+      ctx.moveTo(sx0, beamY - 300);
+      ctx.lineTo(sx0 + 400, beamY + 300);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 轮廓
+  ctx.beginPath();
+  pts.forEach((p, i) => {
+    if (i === 0) ctx.moveTo(p.sx, p.sy);
+    else ctx.lineTo(p.sx, p.sy);
+  });
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineW;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 4;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // 标签
+  if (label) {
+    ctx.font = 'bold 12px "Consolas",monospace';
+    ctx.fillStyle = color;
+    ctx.textAlign = 'left';
+    // 找M值最大处
+    let maxI = 0, maxAbs = 0;
+    pts.forEach((p, i) => { if (Math.abs(p.M) > maxAbs) { maxAbs = Math.abs(p.M); maxI = i; } });
+    const pm = pts[maxI];
+    ctx.fillText(label, pm.sx + 6, pm.sy + (pm.M > 0 ? 16 : -6));
+  }
+
+  // 特征值
+  if (showValues) {
+    ctx.font = '10px "Consolas",monospace';
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    // A端
+    const pA = pts[0];
+    ctx.fillText(pA.M.toFixed(1), pA.sx, pA.sy + (pA.M > 0 ? 12 : -6));
+    // B端
+    const pB = pts[pts.length-1];
+    ctx.fillText(pB.M.toFixed(1), pB.sx, pB.sy + (pB.M > 0 ? 12 : -6));
+    // 跨中最大
+    const pMid = pts[Math.floor(N/2)];
+    ctx.fillText(pMid.M.toFixed(1), pMid.sx, pMid.sy + (pMid.M > 0 ? 12 : -6));
+  }
+
+  ctx.restore();
+}
+
+// ============================================================
+// 步骤绘制
+// ============================================================
+function drawStep0(p) {
+  // 原结构：梁 + 支座 + 所有荷载 + 合成弯矩图
+  drawGrid();
+
+  // 合成弯矩图（先画，梁在上层）
+  drawMomentDiagram(MTotal, '#3fb950', {
+    alpha: 0.9, mScale: 3, lineW: 3,
+    label: 'M总(x) = M₁+M₂', showValues: true
+  });
+
+  // 梁、支座
+  drawBeam(toSx(0), toSx(L), 1, beamY + 58);
+  drawSupport(0, 'pin');
+  drawSupport(L, 'roller');
+
+  // 力偶
+  drawCoupleArrow(0, true, MA, '#f85149', `M_A=${MA}`);
+  drawCoupleArrow(L, true, MB, '#f85149', `M_B=${MB}`);
+
+  // 均布荷载
+  drawUniformLoad(0, L, q, 0, '#ffd700', 1);
+}
+
+function drawStep1(p) {
+  // 情况①：力偶单独作用
+  drawGrid();
+
+  // 弯矩图M1（画上方 - 负弯矩）
+  drawMomentDiagram(M1, '#f85149', {
+    alpha: 0.95, mScale: 3, lineW: 3,
+    label: 'M₁(x): 两端力偶作用', showValues: true
+  });
+
+  // 梁、支座
+  drawBeam(toSx(0), toSx(L), 1);
+  drawSupport(0, 'pin');
+  drawSupport(L, 'roller');
+
+  // 力偶（高亮）
+  drawCoupleArrow(0, true, MA, '#f85149', `M_A=${MA}`);
+  drawCoupleArrow(L, true, MB, '#f85149', `M_B=${MB}`);
+
+  // 均布荷载暗淡
+  drawUniformLoad(0, L, q, 0, '#ffd700', 0.15 * (1 - p));
+
+  // 标注
+  ctx.save();
+  ctx.font = 'bold 13px "Segoe UI"';
+  ctx.fillStyle = '#f85149';
+  ctx.textAlign = 'center';
+  ctx.fillText('情况① · 两端力偶单独作用', toSx(L/2), beamY + 72);
+  ctx.font = '11px "Consolas",monospace';
+  ctx.fillStyle = '#8b949e';
+  const RA1 = (MA - MB) / L;
+  ctx.fillText(`M₁(x) = -M_A + R_A·x = -${MA} + ${RA1.toFixed(2)}·x`, toSx(L/2), beamY + 90);
+  ctx.restore();
+}
+
+function drawStep2(p) {
+  // 情况②：均布荷载单独作用
+  drawGrid();
+
+  // 弯矩图M2（抛物线，下方）
+  drawMomentDiagram(M2, '#ffd700', {
+    alpha: 0.95, mScale: 3, lineW: 3,
+    label: 'M₂(x): 均布荷载作用', showValues: true
+  });
+
+  // 梁、支座
+  drawBeam(toSx(0), toSx(L), 1);
+  drawSupport(0, 'pin');
+  drawSupport(L, 'roller');
+
+  // 均布荷载（高亮）
+  drawUniformLoad(0, L, q, 0, '#ffd700', 1);
+
+  // 力偶暗淡
+  ctx.save();
+  ctx.globalAlpha = 0.15 * (1 - p);
+  drawCoupleArrow(0, true, MA, '#f85149', `M_A`);
+  drawCoupleArrow(L, true, MB, '#f85149', `M_B`);
+  ctx.restore();
+
+  // 标注
+  ctx.save();
+  ctx.font = 'bold 13px "Segoe UI"';
+  ctx.fillStyle = '#ffd700';
+  ctx.textAlign = 'center';
+  ctx.fillText('情况② · 均布荷载单独作用', toSx(L/2), beamY + 72);
+  ctx.font = '11px "Consolas",monospace';
+  ctx.fillStyle = '#8b949e';
+  const ql2_8 = q * L * L / 8;
+  ctx.fillText(`M₂(x) = R_A·x - qx²/2，跨中最大: ${ql2_8.toFixed(1)}kN·m = ql²/8`, toSx(L/2), beamY + 90);
+  ctx.restore();
+}
+
+function drawStep3(p) {
+  // 叠加合成动画
+  drawGrid();
+
+  // p=0: 两图分开(左M1, 右M2)，p=1: 合并到中央，逐点相加
+  const spread = (1 - p) * (L * SCALE * 0.55 + 60);
+  const leftOffX = -spread;
+  const rightOffX = spread;
+  const centerOffX = 0;
+
+  const alphaLeft = 1 - p * 0.5;
+  const alphaRight = 1 - p * 0.5;
+  const alphaSum = Math.max(0, (p - 0.3) / 0.7);
+
+  // 左：力偶弯矩图M1（情况①的梁+图）
+  ctx.save();
+  const sx0L = toSx(0) + leftOffX;
+  const sx1L = toSx(L) + leftOffX;
+  // 梁
+  drawBeam(sx0L, sx1L, alphaLeft);
+  // 支座
+  ctx.globalAlpha = alphaLeft;
+  drawSupport(0, 'pin', 1);
+  ctx.restore();
+  ctx.save();
+  ctx.translate(leftOffX, 0);
+  drawSupport(L, 'roller', alphaLeft);
+  drawCoupleArrow(0, true, MA, '#f85149', `M_A`, Math.abs(MA));
+  drawCoupleArrow(L, true, MB, '#f85149', `M_B`, Math.abs(MB));
+  ctx.restore();
+  drawMomentDiagram(M1, '#f85149', {
+    offX: leftOffX, alpha: alphaLeft, mScale: 3, lineW: 2.5, label: p < 0.8 ? 'M₁' : '', showValues: p < 0.5
+  });
+
+  // 右：均布弯矩图M2（情况②的梁+图）
+  ctx.save();
+  const sx0R = toSx(0) + rightOffX;
+  const sx1R = toSx(L) + rightOffX;
+  drawBeam(sx0R, sx1R, alphaRight);
+  ctx.restore();
+  ctx.save();
+  ctx.translate(rightOffX, 0);
+  drawSupport(0, 'pin', alphaRight);
+  drawSupport(L, 'roller', alphaRight);
+  drawUniformLoad(0, L, q, 0, '#ffd700', alphaRight);
+  ctx.restore();
+  drawMomentDiagram(M2, '#ffd700', {
+    offX: rightOffX, alpha: alphaRight, mScale: 3, lineW: 2.5, label: p < 0.8 ? 'M₂' : '', showValues: p < 0.5
+  });
+
+  // 中间加号和等号
+  if (p < 0.9) {
+    ctx.save();
+    ctx.globalAlpha = (1 - p / 0.9) * 0.9;
+    ctx.font = 'bold 42px "Segoe UI"';
+    ctx.fillStyle = '#58a6ff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const plusX = (toSx(L) + leftOffX + toSx(0) + rightOffX) / 2;
+    ctx.fillText('+', plusX, beamY);
+    if (p > 0.3) {
+      const eqX = plusX + spread * 0.25;
+      ctx.globalAlpha = (1 - p / 0.9) * Math.min(1, (p - 0.3) / 0.3) * 0.9;
+      ctx.fillText('=', eqX + spread * 0.15, beamY);
+    }
+    ctx.restore();
+  }
+
+  // 中央合成（p>0.3渐显）
+  if (p > 0.3) {
+    // 合成梁
+    drawBeam(toSx(0), toSx(L), alphaSum, beamY + 58);
+    ctx.save();
+    ctx.globalAlpha = alphaSum;
+    drawSupport(0, 'pin');
+    drawSupport(L, 'roller');
+    drawCoupleArrow(0, true, MA, '#f85149', `M_A`);
+    drawCoupleArrow(L, true, MB, '#f85149', `M_B`);
+    drawUniformLoad(0, L, q, 0, '#ffd700', 0.9 * alphaSum);
+    ctx.restore();
+    // 合成弯矩图
+    drawMomentDiagram(MTotal, '#3fb950', {
+      alpha: alphaSum, mScale: 3, lineW: 3, label: 'M总=M₁+M₂', showValues: true
+    });
+
+    // 叠加说明线：选一个x位置，显示三点连线
+    if (p > 0.6) {
+      const demoAlpha = Math.min(1, (p - 0.6) / 0.4);
+      ctx.save();
+      ctx.globalAlpha = demoAlpha;
+      const xDemo = L / 2;
+      const sxDemo = toSx(xDemo);
+      const m1Val = M1(xDemo), m2Val = M2(xDemo), mtVal = MTotal(xDemo);
+      const ms = 3;
+      // 虚线从左图M1(x)连到合成图M总(x)
+      ctx.strokeStyle = '#f85149';
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(sxDemo + leftOffX, beamY - m1Val * ms);
+      ctx.lineTo(sxDemo + centerOffX, beamY - mtVal * ms);
+      ctx.stroke();
+      // 从右图M2(x)连到合成图
+      ctx.strokeStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.moveTo(sxDemo + rightOffX, beamY - m2Val * ms);
+      ctx.lineTo(sxDemo + centerOffX, beamY - mtVal * ms);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // 数值标签
+      ctx.font = 'bold 11px "Consolas",monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#f85149';
+      ctx.fillText(`M₁=${m1Val.toFixed(1)}`, sxDemo + leftOffX - 10, beamY - m1Val * ms - 8);
+      ctx.fillStyle = '#ffd700';
+      ctx.fillText(`M₂=${m2Val.toFixed(1)}`, sxDemo + rightOffX + 10, beamY - m2Val * ms - 8);
+      ctx.fillStyle = '#3fb950';
+      ctx.fillText(`M总=${mtVal.toFixed(1)}`, sxDemo, beamY - mtVal * ms + (mtVal > 0 ? 18 : -18));
+      ctx.restore();
+    }
+  }
+}
+
+// ============================================================
+// 主渲染
+// ============================================================
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  switch (animStep) {
+    case 0: drawStep0(animProgress); break;
+    case 1: drawStep1(animProgress); break;
+    case 2: drawStep2(animProgress); break;
+    case 3: drawStep3(animProgress); break;
+  }
+  updateUI();
+}
+
+// ============================================================
+// 动画控制
+// ============================================================
+function startPlay() {
+  animStep = 0; animProgress = 0; playing = true;
+  lastTime = performance.now(); holdTime = 0;
+}
+function nextStep() {
+  if (animStep < 3) {
+    animStep++; animProgress = 0; holdTime = 0;
+    updateStepper(); updateStepList(); updateHint();
+  } else {
+    playing = false;
+  }
+}
+function resetAnim() {
+  animStep = 0; animProgress = 0; playing = false; holdTime = 0;
+  updateStepper(); updateStepList(); updateHint();
+}
+function animate(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+  if (playing) {
+    if (animProgress < 1) {
+      animProgress += dt / STEP_DURATION;
+      if (animProgress > 1) animProgress = 1;
+    } else {
+      holdTime += dt;
+      if (holdTime > STEP_HOLD) {
+        holdTime = 0;
+        if (animStep < 3) nextStep(); else playing = false;
+      }
+    }
+  }
+  render();
+  requestAnimationFrame(animate);
+}
+
+// ============================================================
+// UI
+// ============================================================
+function updateStepper() {
+  document.querySelectorAll('.step-item').forEach((el, i) => {
+    el.classList.remove('active', 'done');
+    if (i < animStep) el.classList.add('done');
+    else if (i === animStep) el.classList.add('active');
+  });
+}
+function updateStepList() {
+  document.querySelectorAll('#step-list li').forEach((el, i) => {
+    el.classList.remove('active', 'done');
+    if (i < animStep) el.classList.add('done');
+    else if (i === animStep) el.classList.add('active');
+  });
+}
+function updateHint() {
+  const hint = document.getElementById('hint-box');
+  const h = STEP_HINTS[animStep] || STEP_HINTS[0];
+  hint.innerHTML = `<div class="step-label">${h.label}</div><div>${h.text}</div>`;
+}
+function updateUI() {
+  const fb = document.getElementById('formula-box');
+  const xmid = L / 2;
+  const RA1 = (MA - MB) / L;
+  const M1v = M1(xmid), M2v = M2(xmid), Mtv = MTotal(xmid);
+  const ql2_8 = q * L * L / 8;
+  fb.innerHTML = `
+    <span class="step">在 x=l/2 = ${xmid.toFixed(0)}m 处:</span><br>
+    <span class="lbl">M₁ (力偶):</span> -${MA} + ${RA1.toFixed(2)}×${xmid} = <span class="r">${M1v.toFixed(1)}</span><br>
+    <span class="lbl">M₂ (均布):</span> ql²/8 = <span class="y">${ql2_8.toFixed(1)}</span><br>
+    <span class="lbl">叠加M总:</span> <span class="r">${M1v.toFixed(1)}</span> <span class="op">+</span> <span class="y">${M2v.toFixed(1)}</span> = <span class="res">${Mtv.toFixed(1)} kN·m</span>
+  `;
+}
+
+// ============================================================
+// 事件
+// ============================================================
+document.getElementById('btn-play').addEventListener('click', () => {
+  if (!playing) {
+    if (animStep >= 3 && animProgress >= 1) { resetAnim(); setTimeout(startPlay, 100); }
+    else startPlay();
+  }
+});
+document.getElementById('btn-replay').addEventListener('click', () => { resetAnim(); setTimeout(startPlay, 100); });
+document.getElementById('btn-next').addEventListener('click', () => {
+  if (animStep < 3) { if (animProgress < 1) animProgress = 1; else nextStep(); }
+});
+document.getElementById('btn-apply').addEventListener('click', () => {
+  const nl = parseFloat(document.getElementById('in-l').value);
+  const nma = parseFloat(document.getElementById('in-ma').value);
+  const nmb = parseFloat(document.getElementById('in-mb').value);
+  const nq = parseFloat(document.getElementById('in-q').value);
+  if (!isNaN(nl) && nl > 0) L = nl;
+  if (!isNaN(nma) && nma >= 0) MA = nma;
+  if (!isNaN(nmb) && nmb >= 0) MB = nmb;
+  if (!isNaN(nq) && nq >= 0) q = nq;
+  resize();
+  resetAnim();
+});
+document.querySelectorAll('.step-item').forEach(el => {
+  el.addEventListener('click', () => {
+    animStep = parseInt(el.dataset.step);
+    animProgress = 1; playing = false;
+    updateStepper(); updateStepList(); updateHint();
+  });
+});
+
+// 初始化
+updateStepper();
+updateStepList();
+updateHint();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

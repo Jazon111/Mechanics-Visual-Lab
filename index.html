@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>力学概念可视化 · 总览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #010409;
+    color: #e6edf3;
+    overflow: hidden;
+  }
+
+  /* ============ 顶层布局 ============ */
+  #app {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* ============ 左侧侧栏 ============ */
+  #sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: #0d1117;
+    border-right: 1px solid #30363d;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* 品牌区 */
+  #sidebar-header {
+    padding: 22px 20px 18px;
+    border-bottom: 1px solid #30363d;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(135deg, rgba(31,111,235,0.08), transparent);
+  }
+  #sidebar-header .logo {
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #1f6feb, #58a6ff);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 16px; color: #fff;
+    box-shadow: 0 0 12px rgba(31,111,235,0.4);
+  }
+  #sidebar-header .brand {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  #sidebar-header .brand .title {
+    font-size: 14px; font-weight: 700; color: #e6edf3;
+  }
+  #sidebar-header .brand .subtitle {
+    font-size: 11px; color: #6e7681; letter-spacing: 0.5px;
+  }
+
+  /* 分组标题 */
+  .nav-group-title {
+    padding: 18px 20px 8px;
+    font-size: 10px; font-weight: 700;
+    color: #6e7681;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .nav-group-title::before {
+    content: "";
+    display: inline-block;
+    width: 3px; height: 12px;
+    border-radius: 2px;
+    background: #30363d;
+  }
+
+  /* 菜单列表 */
+  .nav-list {
+    list-style: none;
+    padding: 0 10px;
+    flex: 1;
+    overflow-y: auto;
+  }
+  .nav-list::-webkit-scrollbar { width: 4px; }
+  .nav-list::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+
+  /* 菜单项 */
+  .nav-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    margin-bottom: 3px;
+    cursor: pointer;
+    transition: all .2s;
+    color: #8b949e;
+    font-size: 13.5px;
+    user-select: none;
+  }
+  .nav-item:hover {
+    background: rgba(48,54,61,0.5);
+    color: #c9d1d9;
+  }
+  .nav-item.active {
+    background: rgba(31,111,235,0.15);
+    color: #58a6ff;
+  }
+  .nav-item.active::before {
+    content: "";
+    position: absolute;
+    left: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px; height: 60%;
+    border-radius: 0 2px 2px 0;
+    background: #58a6ff;
+    box-shadow: 0 0 6px rgba(88,166,255,0.5);
+  }
+  .nav-item.locked {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .nav-item.locked:hover {
+    background: transparent;
+    color: #6e7681;
+  }
+
+  /* 图标 */
+  .nav-icon {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 700;
+    background: rgba(48,54,61,0.6);
+    transition: all .2s;
+  }
+  .nav-item.active .nav-icon {
+    background: #1f6feb;
+    color: #fff;
+    box-shadow: 0 0 10px rgba(31,111,235,0.4);
+  }
+  .nav-item .tag {
+    margin-left: auto;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: rgba(88,166,255,0.15);
+    color: #58a6ff;
+    font-weight: 600;
+  }
+  .nav-item.locked .tag {
+    background: rgba(110,118,129,0.2);
+    color: #6e7681;
+  }
+  .nav-item .badge-soon {
+    background: rgba(255,188,59,0.15);
+    color: #ffbc3b;
+  }
+
+  /* 状态描述 */
+  .nav-text {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .nav-text .name { font-weight: 500; line-height: 1.2; }
+  .nav-text .desc {
+    font-size: 10.5px;
+    color: #6e7681;
+    font-weight: 400;
+  }
+  .nav-item.active .nav-text .desc { color: #4a93d9; }
+  .nav-item.locked .nav-text .desc { color: #484f58; }
+
+  /* 底部信息 */
+  #sidebar-footer {
+    padding: 12px 16px;
+    border-top: 1px solid #30363d;
+    font-size: 11px;
+    color: #6e7681;
+    background: #0d1117;
+  }
+  #sidebar-footer .stat {
+    display: flex; justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  #sidebar-footer .stat .v {
+    color: #8b949e;
+    font-family: "Consolas", monospace;
+  }
+  #sidebar-footer .tips {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px dashed #21262d;
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: #484f58;
+  }
+
+  /* ============ 右侧内容区 ============ */
+  #main {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    background: #0a0e16;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 顶部工具栏 */
+  #toolbar {
+    height: 54px;
+    flex-shrink: 0;
+    border-bottom: 1px solid #30363d;
+    background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+    display: flex;
+    align-items: center;
+    padding: 0 22px;
+    gap: 14px;
+  }
+  #toolbar .crumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+  }
+  #toolbar .crumb .home {
+    color: #6e7681;
+    cursor: default;
+    font-size: 13px;
+  }
+  #toolbar .crumb .sep {
+    color: #30363d;
+    font-weight: 700;
+  }
+  #toolbar .crumb .cur {
+    color: #e6edf3;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  #toolbar .crumb .cur .dof {
+    color: #58a6ff;
+    font-weight: 700;
+    margin-left: 8px;
+    font-size: 12px;
+    background: rgba(88,166,255,0.12);
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-family: "Consolas", monospace;
+  }
+  #toolbar .actions {
+    display: flex;
+    gap: 8px;
+  }
+  .tool-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 13px;
+    border: 1px solid #30363d;
+    background: #21262d;
+    color: #c9d1d9;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    transition: all .2s;
+  }
+  .tool-btn:hover {
+    background: #30363d;
+    border-color: #484f58;
+    color: #fff;
+  }
+  .tool-btn .ic {
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  /* iframe 容器 */
+  #frame-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  #view-frame {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+    background: #0a0e16;
+  }
+
+  /* 加载遮罩 */
+  #loader {
+    position: absolute;
+    inset: 0;
+    background: #0a0e16;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s;
+    z-index: 5;
+  }
+  #loader.show {
+    opacity: 1;
+  }
+  #loader .spinner {
+    width: 38px; height: 38px;
+    border: 3px solid #30363d;
+    border-top-color: #58a6ff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  #loader .txt {
+    font-size: 12px;
+    color: #6e7681;
+    font-family: "Consolas", monospace;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 空态提示 */
+  #empty-state {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 14px;
+    z-index: 10;
+    background: radial-gradient(circle at 50% 50%, #10161f 0%, #0a0e16 70%);
+  }
+  #empty-state.show { display: flex; }
+  #empty-state .icon {
+    font-size: 52px;
+    opacity: 0.35;
+  }
+  #empty-state h3 {
+    font-size: 18px;
+    color: #c9d1d9;
+    font-weight: 600;
+  }
+  #empty-state p {
+    font-size: 13px;
+    color: #6e7681;
+    max-width: 340px;
+    text-align: center;
+    line-height: 1.7;
+  }
+  #empty-state .retry-btn {
+    margin-top: 8px;
+    padding: 9px 18px;
+    border: 1px solid #1f6feb;
+    background: rgba(31,111,235,0.15);
+    color: #58a6ff;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 600;
+    transition: all .2s;
+    text-decoration: none;
+    display: inline-block;
+  }
+  #empty-state .retry-btn:hover {
+    background: rgba(31,111,235,0.3);
+    color: #fff;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- ============ 左侧侧栏 ============ -->
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <div class="logo">M</div>
+      <div class="brand">
+        <div class="title">力学可视化实验室</div>
+        <div class="subtitle">Mechanics Visual Lab</div>
+      </div>
+    </div>
+
+    <ul class="nav-list">
+      <li class="nav-group-title">核心概念</li>
+
+      <!-- 1. 自由度 -->
+      <li class="nav-item active" data-url="dof_visualization.html" data-title="平面自由度可视化" data-dof="">
+        <div class="nav-icon">DOF</div>
+        <div class="nav-text">
+          <span class="name">自由度 (DOF)</span>
+          <span class="desc">平面内的点 / 刚体</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <!-- 2. 后续占位 -->
+      <li class="nav-item" data-url="support_constraint.html" data-title="支座约束可视化" data-dof="">
+        <div class="nav-icon">C</div>
+        <div class="nav-text">
+          <span class="name">支座约束</span>
+          <span class="desc">可动铰 / 固定铰 / 固定 / 定向</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-item" data-url="hinge_visualization.html" data-title="实铰与虚铰可视化" data-dof="">
+        <div class="nav-icon">H</div>
+        <div class="nav-text">
+          <span class="name">实铰 &amp; 虚铰</span>
+          <span class="desc">两刚片 + 两链杆等效</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-item" data-url="system_classification.html" data-title="几何体系分类" data-dof="">
+        <div class="nav-icon">S</div>
+        <div class="nav-text">
+          <span class="name">体系分类</span>
+          <span class="desc">可变 / 瞬变 / 不变</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-item" data-url="two_body_rule.html" data-title="两刚片规则" data-dof="">
+        <div class="nav-icon">R</div>
+        <div class="nav-text">
+          <span class="name">两刚片规则</span>
+          <span class="desc">一铰一链杆 / 三链杆虚铰</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-item" data-url="binary_link.html" data-title="增减二元体" data-dof="">
+        <div class="nav-icon">B</div>
+        <div class="nav-text">
+          <span class="name">增减二元体</span>
+          <span class="desc">几何组成 · 二元体规则</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-item" data-url="bending_moment.html" data-title="弯矩概念" data-dof="">
+        <div class="nav-icon">M</div>
+        <div class="nav-text">
+          <span class="name">弯矩求解</span>
+          <span class="desc">切-取-标-列四步法求弯矩</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-item" data-url="shear_force.html" data-title="剪力求解" data-dof="">
+        <div class="nav-icon">Q</div>
+        <div class="nav-text">
+          <span class="name">剪力求解</span>
+          <span class="desc">切-取-标-列四步法求剪力</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-item" data-url="superposition.html" data-title="弯矩叠加法" data-dof="">
+        <div class="nav-icon">Σ</div>
+        <div class="nav-text">
+          <span class="name">弯矩叠加法</span>
+          <span class="desc">M₁(x) + M₂(x) = M总(x)</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-item" data-url="internal_force.html" data-title="伸臂梁内力图" data-dof="">
+        <div class="nav-icon">F</div>
+        <div class="nav-text">
+          <span class="name">伸臂梁内力图</span>
+          <span class="desc">剪力图 + 弯矩图绘制</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-item" data-url="multi_span_beam.html" data-title="多跨静定梁" data-dof="">
+        <div class="nav-icon">M</div>
+        <div class="nav-text">
+          <span class="name">多跨静定梁求解</span>
+          <span class="desc">附属部分 → 基本部分 → 弯矩图</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-item" data-url="rigid_frame.html" data-title="刚架内力分析" data-dof="">
+        <div class="nav-icon">RF</div>
+        <div class="nav-text">
+          <span class="name">刚架内力分析</span>
+          <span class="desc">矩阵位移法 · M/V/N图</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-item" data-url="生成结构力学求解器互动课件.html" data-title="简支梁内力求解器" data-dof="">
+        <div class="nav-icon">SSB</div>
+        <div class="nav-text">
+          <span class="name">简支梁内力求解器</span>
+          <span class="desc">Pro v3.0 · 荷载叠加 · M/V图</span>
+        </div>
+        <span class="tag">已完成</span>
+      </li>
+
+      <li class="nav-group-title">运动学</li>
+
+      <li class="nav-item locked" data-title="平面运动合成" data-soon="true">
+        <div class="nav-icon">V</div>
+        <div class="nav-text">
+          <span class="name">刚体平面运动</span>
+          <span class="desc">平动 + 转动合成</span>
+        </div>
+        <span class="tag badge-soon">即将推出</span>
+      </li>
+
+      <li class="nav-item locked" data-title="速度瞬心" data-soon="true">
+        <div class="nav-icon">IC</div>
+        <div class="nav-text">
+          <span class="name">速度瞬心</span>
+          <span class="desc">瞬时转动中心</span>
+        </div>
+        <span class="tag badge-soon">即将推出</span>
+      </li>
+
+      <li class="nav-group-title">其它专题</li>
+
+      <li class="nav-item locked" data-title="桁架内力分析" data-soon="true">
+        <div class="nav-icon">T</div>
+        <div class="nav-text">
+          <span class="name">桁架零杆</span>
+          <span class="desc">节点法 / 截面法</span>
+        </div>
+        <span class="tag badge-soon">即将推出</span>
+      </li>
+
+      <li class="nav-item locked" data-title="摩擦现象" data-soon="true">
+        <div class="nav-icon">μ</div>
+        <div class="nav-text">
+          <span class="name">摩擦</span>
+          <span class="desc">静 / 动摩擦对比</span>
+        </div>
+        <span class="tag badge-soon">即将推出</span>
+      </li>
+
+      <li style="height: 8px;"></li>
+    </ul>
+
+    <div id="sidebar-footer">
+      <div class="stat">
+        <span>已实现</span>
+        <span class="v" id="stat-done">13</span>
+      </div>
+      <div class="stat">
+        <span>规划中</span>
+        <span class="v" id="stat-soon">4</span>
+      </div>
+      <div class="tips">💡 点击左侧项目切换右侧可视化</div>
+    </div>
+  </aside>
+
+  <!-- ============ 右侧内容区 ============ -->
+  <main id="main">
+    <div id="toolbar">
+      <div class="crumb">
+        <span class="home">力学可视化</span>
+        <span class="sep">/</span>
+        <span class="cur" id="crumb-title">
+          自由度 (DOF)
+          <span class="dof">2D · 点 / 刚体</span>
+        </span>
+      </div>
+      <div class="actions">
+        <button class="tool-btn" id="btn-reload" title="重新加载当前页面">
+          <span class="ic">⟳</span><span>重载</span>
+        </button>
+        <button class="tool-btn" id="btn-newtab" title="在新标签页中打开">
+          <span class="ic">↗</span><span>新窗口</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="frame-wrap">
+      <iframe id="view-frame" src="dof_visualization.html"></iframe>
+      <div id="loader">
+        <div class="spinner"></div>
+        <div class="txt">加载中...</div>
+      </div>
+      <div id="empty-state">
+        <div class="icon">🚧</div>
+        <h3 id="empty-title">这个模块还在开发中</h3>
+        <p id="empty-desc">该概念的可视化页面正在规划和实现中，敬请期待。<br>你可以先从左侧已完成的模块开始学习。</p>
+        <a class="retry-btn" id="empty-open" href="#" target="_blank" style="display:none;">在新窗口打开此页面</a>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  // ========== 数据 & 状态 ==========
+  const navItems = document.querySelectorAll('.nav-item');
+  const frame = document.getElementById('view-frame');
+  const loader = document.getElementById('loader');
+  const emptyState = document.getElementById('empty-state');
+  const emptyTitle = document.getElementById('empty-title');
+  const emptyDesc = document.getElementById('empty-desc');
+  const emptyOpen = document.getElementById('empty-open');
+  const crumbTitle = document.getElementById('crumb-title');
+  const btnReload = document.getElementById('btn-reload');
+  const btnNewtab = document.getElementById('btn-newtab');
+
+  let currentUrl = 'dof_visualization.html';
+  let loadTimer = null;
+  let isFileProtocol = window.location.protocol === 'file:';
+
+  // ========== 加载状态 ==========
+  function showLoader() {
+    loader.classList.add('show');
+    // 超时兜底：3s 后若仍未触发 load，提示可能加载失败
+    if (loadTimer) clearTimeout(loadTimer);
+    loadTimer = setTimeout(() => {
+      loader.classList.remove('show');
+    }, 3000);
+  }
+  function hideLoader() {
+    if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
+    setTimeout(() => loader.classList.remove('show'), 120);
+  }
+  frame.addEventListener('load', hideLoader);
+  frame.addEventListener('error', () => {
+    hideLoader();
+    showLoadError();
+  });
+
+  // ========== 加载失败提示 ==========
+  function showLoadError() {
+    emptyTitle.textContent = '页面加载失败';
+    emptyDesc.innerHTML = '当前页面无法在 iframe 中加载。<br>可能是浏览器限制了本地文件的嵌套显示。';
+    emptyOpen.style.display = 'inline-block';
+    emptyOpen.href = currentUrl;
+    emptyState.classList.add('show');
+    frame.style.visibility = 'hidden';
+  }
+
+  // ========== 切换页面 ==========
+  function switchPage(item) {
+    // 高亮
+    navItems.forEach(n => n.classList.remove('active'));
+    item.classList.add('active');
+
+    const url = item.dataset.url;
+    const title = item.dataset.title || item.querySelector('.name').textContent.trim();
+    const desc = item.querySelector('.desc')?.textContent.trim() || '';
+    const soon = item.dataset.soon === 'true';
+    const locked = item.classList.contains('locked');
+
+    // 更新面包屑
+    crumbTitle.innerHTML = title + (desc
+      ? `<span class="dof">${desc}</span>`
+      : '');
+
+    if (locked || !url) {
+      // 未实现 → 显示空态
+      emptyTitle.textContent = soon
+        ? `「${title}」即将上线`
+        : `「${title}」模块还在开发中`;
+      emptyDesc.innerHTML = '该概念的可视化页面正在规划和实现中，敬请期待。<br>你可以先从左侧已完成的模块开始学习。';
+      emptyOpen.style.display = 'none';
+      emptyState.classList.add('show');
+      frame.style.visibility = 'hidden';
+      return;
+    }
+
+    // 已实现 → 加载 iframe
+    emptyState.classList.remove('show');
+    frame.style.visibility = 'visible';
+
+    if (currentUrl !== url) {
+      showLoader();
+      currentUrl = url;
+      frame.src = url;
+    }
+  }
+
+  // ========== 绑定菜单点击 ==========
+  navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      if (!item.classList.contains('locked')) {
+        switchPage(item);
+      }
+    });
+  });
+
+  // ========== 工具栏 ==========
+  btnReload.addEventListener('click', () => {
+    if (frame.style.visibility !== 'hidden') {
+      showLoader();
+      // file:// 协议下 contentWindow.location 可能受限，用重新设置 src 的方式更稳妥
+      const url = currentUrl;
+      frame.src = 'about:blank';
+      setTimeout(() => { frame.src = url; }, 50);
+    }
+  });
+
+  btnNewtab.addEventListener('click', () => {
+    if (currentUrl) {
+      window.open(currentUrl, '_blank');
+    }
+  });
+
+  // ========== 默认激活第一项（非 locked） ==========
+  const firstDone = document.querySelector('.nav-item:not(.locked)');
+  if (firstDone) {
+    firstDone.classList.add('active');
+    switchPage(firstDone);
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>增减二元体 · 几何组成分析</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #0d1117; color: #e6edf3; overflow: hidden; }
+  #app { display: flex; height: 100vh; }
+  #scene-wrap { flex:1; position:relative; overflow:hidden; background: radial-gradient(circle at 50% 50%, #1b2433 0%, #0a0e16 75%); }
+  #scene { position:absolute; top:0; left:0; width:100%; height:100%; display:block; }
+
+  #mode-bar {
+    position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:11;
+    display:flex; gap:6px; background:rgba(22,27,34,0.85);
+    padding:6px; border-radius:12px; border:1px solid #30363d; backdrop-filter:blur(6px);
+  }
+  .btn-mode {
+    padding:8px 16px; border:none; border-radius:8px; cursor:pointer;
+    background:transparent; color:#8b949e; font-size:12.5px; font-weight:600;
+    transition:all .25s; white-space:nowrap;
+  }
+  .btn-mode:hover:not(.active) { color:#e6edf3; background:rgba(255,255,255,.05); }
+  .btn-mode.active { background:#1f6feb; color:#fff; box-shadow:0 0 10px rgba(31,111,235,.5); }
+
+  #stepper {
+    position:absolute; top:62px; left:50%; transform:translateX(-50%); z-index:10;
+    display:flex; gap:4px; background:rgba(22,27,34,0.85);
+    padding:7px 14px; border-radius:12px; border:1px solid #30363d; backdrop-filter:blur(6px);
+  }
+  .step-dot { width:28px; height:6px; border-radius:3px; background:#30363d; transition:all .3s; }
+  .step-dot.active { background:#58a6ff; box-shadow:0 0 8px rgba(88,166,255,.6); }
+  .step-dot.done { background:#3fb950; }
+
+  #hint-box {
+    position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:10;
+    background:rgba(22,27,34,0.88); border:1px solid #30363d;
+    padding:11px 22px; border-radius:12px; backdrop-filter:blur(6px);
+    font-size:13.5px; color:#e6edf3; text-align:center; min-width:300px; max-width:620px;
+    transition:opacity .3s;
+  }
+  #hint-box .icon { font-size:17px; margin-right:6px; }
+  #hint-box .hl-y { color:#ffd700; font-weight:600; }
+  #hint-box .hl-g { color:#3fb950; font-weight:600; }
+  #hint-box .hl-b { color:#58a6ff; font-weight:600; }
+  #hint-box .hl-p { color:#a371f7; font-weight:600; }
+
+  #panel {
+    width:300px; background:#161b22; border-left:1px solid #30363d;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  #panel h2 {
+    padding:14px 16px; font-size:14.5px; color:#e6edf3;
+    border-bottom:1px solid #30363d; display:flex; align-items:center; gap:8px;
+  }
+  #panel h2 .dot { width:8px; height:8px; border-radius:50%; background:#58a6ff; box-shadow:0 0 8px #58a6ff; }
+  #panel-body { flex:1; overflow-y:auto; padding:12px 14px; }
+  #panel-body::-webkit-scrollbar { width:5px; }
+  #panel-body::-webkit-scrollbar-thumb { background:#30363d; border-radius:3px; }
+
+  .btn {
+    width:100%; padding:9px; border:none; border-radius:8px; cursor:pointer;
+    font-size:12.5px; font-weight:600; transition:all .2s; margin-bottom:7px;
+  }
+  .btn.primary { background:#1f6feb; color:#fff; }
+  .btn.primary:hover { background:#388bfd; }
+  .btn.secondary { background:#21262d; color:#c9d1d9; border:1px solid #30363d; }
+  .btn.secondary:hover { background:#30363d; color:#fff; }
+
+  .info-block {
+    padding:11px; background:#0d1117; border:1px solid #21262d;
+    border-radius:10px; margin-bottom:11px; font-size:12px; line-height:1.7; color:#8b949e;
+  }
+  .info-block b { color:#c9d1d9; }
+  .info-block .hl-b { color:#58a6ff; font-weight:600; }
+  .info-block .hl-p { color:#a371f7; font-weight:600; }
+  .info-block .hl-y { color:#ffd700; font-weight:600; }
+  .info-block .hl-g { color:#3fb950; font-weight:600; }
+
+  .step-list { list-style:none; padding:0; }
+  .step-list li {
+    display:flex; align-items:flex-start; gap:9px; padding:7px 0;
+    font-size:12px; color:#8b949e; border-bottom:1px solid #21262d;
+  }
+  .step-list li:last-child { border:none; }
+  .step-list .num {
+    width:20px; height:20px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:10.5px; font-weight:700; background:#30363d; color:#8b949e;
+    transition:all .3s;
+  }
+  .step-list li.active .num { background:#1f6feb; color:#fff; }
+  .step-list li.active { color:#e6edf3; }
+  .step-list li.done .num { background:#3fb950; color:#fff; }
+  .step-list li.done { color:#c9d1d9; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scene-wrap">
+    <canvas id="scene"></canvas>
+
+    <div id="mode-bar">
+      <button class="btn-mode active" data-mode="add">增加二元体</button>
+      <button class="btn-mode" data-mode="remove">拆除二元体</button>
+    </div>
+
+    <div id="stepper">
+      <div class="step-dot" data-s="0"></div>
+      <div class="step-dot" data-s="1"></div>
+      <div class="step-dot" data-s="2"></div>
+      <div class="step-dot" data-s="3"></div>
+      <div class="step-dot" data-s="4"></div>
+      <div class="step-dot" data-s="5"></div>
+      <div class="step-dot" data-s="6"></div>
+      <div class="step-dot" data-s="7"></div>
+      <div class="step-dot" data-s="8"></div>
+    </div>
+
+    <div id="hint-box">
+      <span class="icon">▶</span>点击右侧"播放动画"开始演示
+    </div>
+  </div>
+
+  <div id="panel">
+    <h2><span class="dot"></span><span>增减二元体</span></h2>
+    <div id="panel-body">
+      <div class="info-block">
+        <b>二元体规则</b><br>
+        在一个<span class="hl-b">几何不变</span>体系上，增加一个由<span class="hl-y">两根链杆</span>和一个<span class="hl-p">新结点</span>构成的<b>二元体</b>，
+        或拆除其上的二元体，体系仍然<span class="hl-g">几何不变</span>，且无多余联系。
+      </div>
+
+      <button class="btn primary" id="btn-play">▶ 播放动画</button>
+      <button class="btn secondary" id="btn-replay">↺ 重新播放</button>
+
+      <div class="info-block">
+        <b>动画步骤</b>
+        <ul class="step-list" id="step-list"></ul>
+      </div>
+
+      <div class="info-block">
+        <b>关键概念</b><br>
+        · 基础：<span class="hl-b">铰结三角形123</span>（几何不变）<br>
+        · 二元体：<span class="hl-y">新结点 + 两根链杆</span>（2约束）<br>
+        · 每增/拆一个二元体，<span class="hl-g">自由度不变</span>（始终=0）<br>
+        · 结论：<span class="hl-g">体系几何不变，无多余联系</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, CX = 0, CY = 0;
+const SCALE = 70;
+
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = w; H = h;
+  CX = W / 2; CY = H / 2;
+}
+window.addEventListener('resize', resize); resize();
+
+function toS(x, y) { return { x: CX + x * SCALE, y: CY - y * SCALE }; }
+function toW(sx, sy) { return { x: (sx - CX) / SCALE, y: (CY - sy) / SCALE }; }
+
+// ============================================================
+// 桁架节点坐标（单位：世界坐标，SCALE=70）
+// 采用图片中的下弦10个节点 + 上弦节点，形成三角形桁架
+// 下弦节点: 1,2,4,5,8,9
+// 上弦节点: 3,6,7,10
+// ============================================================
+
+const NODES = {
+  1:  { x: -3.5, y:  0.0 },
+  2:  { x: -3.5, y: -1.5 },
+  3:  { x: -1.75, y: 0.866 },
+  4:  { x: -1.75, y: -1.5 },
+  5:  { x:  0.0,  y: -1.5 },
+  6:  { x:  0.0,  y:  0.866 },
+  7:  { x:  1.75, y:  0.866 },
+  8:  { x:  1.75, y: -1.5 },
+  9:  { x:  3.5,  y: -1.5 },
+  10: { x:  3.5,  y:  0.0 },
+};
+
+// 三角形123（基础稳定单元）
+const BASE_TRUSS = [
+  { from: 1, to: 2 },
+  { from: 1, to: 3 },
+  { from: 2, to: 3 },
+];
+
+// 逐步增加的二元体（每个二元体：新结点 + 两根链杆）
+// 顺序：4 → 5 → 6 → 7 → 8 → 9 → 10
+const ADD_BINARY_LINKS = [
+  // 步骤1: 增加结点4 (通过杆2-4 和杆3-4)
+  [{ from: 2, to: 4 }, { from: 3, to: 4 }],
+  // 步骤2: 增加结点5 (通过杆4-5 和杆3-5)
+  [{ from: 4, to: 5 }, { from: 3, to: 5 }],
+  // 步骤3: 增加结点6 (通过杆5-6 和杆3-6)
+  [{ from: 5, to: 6 }, { from: 3, to: 6 }],
+  // 步骤4: 增加结点7 (通过杆6-7 和杆5-7)
+  [{ from: 6, to: 7 }, { from: 5, to: 7 }],
+  // 步骤5: 增加结点8 (通过杆7-8 和杆5-8)
+  [{ from: 7, to: 8 }, { from: 5, to: 8 }],
+  // 步骤6: 增加结点9 (通过杆8-9 和杆7-9)
+  [{ from: 8, to: 9 }, { from: 7, to: 9 }],
+  // 步骤7: 增加结点10 (通过杆9-10 和杆7-10)
+  [{ from: 9, to: 10 }, { from: 7, to: 10 }],
+];
+
+// 拆除顺序（反向）
+const REMOVE_BINARY_LINKS = [
+  [{ from: 9, to: 10 }, { from: 7, to: 10 }],
+  [{ from: 8, to: 9 }, { from: 7, to: 9 }],
+  [{ from: 7, to: 8 }, { from: 5, to: 8 }],
+  [{ from: 6, to: 7 }, { from: 5, to: 7 }],
+  [{ from: 5, to: 6 }, { from: 3, to: 6 }],
+  [{ from: 4, to: 5 }, { from: 3, to: 5 }],
+  [{ from: 2, to: 4 }, { from: 3, to: 4 }],
+];
+
+// 步骤描述
+const ADD_STEPS = [
+  '从铰结三角形 <b>123</b> 出发（几何不变基础）',
+  '增加二元体 → 新结点 <b>4</b>（杆 2-4、3-4）',
+  '增加二元体 → 新结点 <b>5</b>（杆 4-5、3-5）',
+  '增加二元体 → 新结点 <b>6</b>（杆 5-6、3-6）',
+  '增加二元体 → 新结点 <b>7</b>（杆 6-7、5-7）',
+  '增加二元体 → 新结点 <b>8</b>（杆 7-8、5-8）',
+  '增加二元体 → 新结点 <b>9</b>（杆 8-9、7-9）',
+  '增加二元体 → 新结点 <b>10</b>（杆 9-10、7-10）',
+  '<b class="hl-g">体系几何不变，无多余联系</b>',
+];
+
+const REMOVE_STEPS = [
+  '从完整桁架 <b>1~10</b> 出发（几何不变）',
+  '拆除二元体 → 结点 <b>10</b>（杆 9-10、7-10）',
+  '拆除二元体 → 结点 <b>9</b>（杆 8-9、7-9）',
+  '拆除二元体 → 结点 <b>8</b>（杆 7-8、5-8）',
+  '拆除二元体 → 结点 <b>7</b>（杆 6-7、5-7）',
+  '拆除二元体 → 结点 <b>6</b>（杆 5-6、3-6）',
+  '拆除二元体 → 结点 <b>5</b>（杆 4-5、3-5）',
+  '拆除二元体 → 结点 <b>4</b>（杆 2-4、3-4）',
+  '剩余铰结三角形 <b>123</b>，<b class="hl-g">几何不变，无多余联系</b>',
+];
+
+// 当前模式
+let mode = 'add'; // 'add' | 'remove'
+let animStep = -1;
+let playing = false;
+let progress = 0;
+let lastTime = 0;
+let holdTime = 0;
+let holdDuration = 0.6;
+
+// 已添加的杆集合（基于步骤）
+// step k 表示已完成k步，有 k+3 根杆（基础3根 + k×2根）
+// 对于remove模式：step k 表示已完成k步拆除
+
+function getDisplayedLinks(step) {
+  // add模式: step 0 = 只有基础3根; step 1 = 基础+2根...
+  // remove模式: step 0 = 全部17根; step 1 = 15根...
+  const links = [];
+  if (mode === 'add') {
+    // 基础三角形
+    BASE_TRUSS.forEach(l => links.push({ ...l, isNew: false }));
+    for (let i = 0; i < step && i < ADD_BINARY_LINKS.length; i++) {
+      ADD_BINARY_LINKS[i].forEach(l => links.push({ ...l, isNew: true, step: i + 1 }));
+    }
+  } else {
+    // remove模式
+    // 全部17根杆
+    const allLinks = [];
+    BASE_TRUSS.forEach(l => allLinks.push(l));
+    ADD_BINARY_LINKS.forEach(binary => binary.forEach(l => allLinks.push(l)));
+    // 逐步移除
+    const removed = new Set();
+    for (let i = 0; i < step && i < REMOVE_BINARY_LINKS.length; i++) {
+      REMOVE_BINARY_LINKS[i].forEach(l => removed.add(`${l.from}-${l.to}`));
+    }
+    allLinks.forEach(l => {
+      const key = `${l.from}-${l.to}`;
+      if (!removed.has(key) && !removed.has(`${l.to}-${l.from}`)) {
+        links.push({ ...l, isNew: false });
+      }
+    });
+  }
+  return links;
+}
+
+function getActiveNodes(step) {
+  const nodes = new Set();
+  if (mode === 'add') {
+    // 基础三角形的节点
+    [1, 2, 3].forEach(n => nodes.add(n));
+    for (let i = 0; i < step && i < ADD_BINARY_LINKS.length; i++) {
+      ADD_BINARY_LINKS[i].forEach(l => { nodes.add(l.from); nodes.add(l.to); });
+    }
+  } else {
+    // 全部节点
+    Object.keys(NODES).forEach(k => nodes.add(parseInt(k)));
+    for (let i = 0; i < step && i < REMOVE_BINARY_LINKS.length; i++) {
+      // 拆除后，如果一个结点只剩一根杆或没有杆，则该结点消失
+      // 我们简化处理：检查该结点是否还在任何剩余杆中
+    }
+    // 简化：基于links来确定哪些结点可见
+    const links = getDisplayedLinks(step);
+    const nodeCount = {};
+    links.forEach(l => {
+      nodeCount[l.from] = (nodeCount[l.from] || 0) + 1;
+      nodeCount[l.to] = (nodeCount[l.to] || 0) + 1;
+    });
+    // 至少有一根杆的结点可见
+    Object.keys(NODES).forEach(k => {
+      const n = parseInt(k);
+      if (nodeCount[n] !== undefined && nodeCount[n] >= 1) nodes.add(n);
+    });
+  }
+  return nodes;
+}
+
+function getNewNodeStep(step) {
+  if (mode === 'add') {
+    if (step <= 0) return null;
+    if (step > ADD_BINARY_LINKS.length) return null;
+    // 第step步引入的新结点
+    const prevNodes = new Set([1, 2, 3]);
+    for (let i = 0; i < step - 1 && i < ADD_BINARY_LINKS.length; i++) {
+      ADD_BINARY_LINKS[i].forEach(l => { prevNodes.add(l.from); prevNodes.add(l.to); });
+    }
+    const currBinary = ADD_BINARY_LINKS[step - 1];
+    const allNodes = new Set(prevNodes);
+    currBinary.forEach(l => { allNodes.add(l.from); allNodes.add(l.to); });
+    for (const n of allNodes) {
+      if (!prevNodes.has(n)) return n;
+    }
+    return null;
+  } else {
+    if (step <= 0) return null;
+    if (step > REMOVE_BINARY_LINKS.length) return null;
+    const currBinary = REMOVE_BINARY_LINKS[step - 1];
+    // 找到这组杆独有的结点（之前所有其他杆不含此结点）
+    const allOtherNodes = new Set();
+    for (let i = 0; i < step - 1 && i < REMOVE_BINARY_LINKS.length; i++) {
+      REMOVE_BINARY_LINKS[i].forEach(l => { allOtherNodes.add(l.from); allOtherNodes.add(l.to); });
+    }
+    currBinary.forEach(l => { allOtherNodes.add(l.from); allOtherNodes.add(l.to); });
+    const baseNodes = new Set([1, 2, 3]);
+    // 新引入的结点就是currBinary中不在prev集合中的
+    const prevNodes = new Set([1, 2, 3]);
+    for (let i = 0; i < step - 1 && i < REMOVE_BINARY_LINKS.length; i++) {
+      REMOVE_BINARY_LINKS[i].forEach(l => { prevNodes.add(l.from); prevNodes.add(l.to); });
+    }
+    // 检查哪个结点只出现在currBinary中
+    const currNodes = new Set();
+    currBinary.forEach(l => { currNodes.add(l.from); currNodes.add(l.to); });
+    for (const n of currNodes) {
+      // 如果这个结点在之前的步骤中没有出现过，那它就是拆除时消失的新结点
+      // 但对于remove模式，结点都是一开始就有的。我们用另一个标准：
+      // 这个结点是否只通过currBinary的杆连接（其他杆不涉及）
+      let otherLinksCount = 0;
+      // 检查基础三角形和之前添加的二元体中是否包含该结点
+      // 简化：如果该结点只在currBinary的杆中出现，且不在BASE_TRUSS中
+      if (!baseNodes.has(n) && !prevNodes.has(n)) {
+        // 这个结点是currBinary独有的
+        // 需要确认：检查所有其他已添加（未拆除）的杆中是否还有这个结点
+        // 在step-1时，currBinary的杆还存在（刚被拆除）
+        // 检查：在已添加的所有二元体中，除了当前这组，还有没有其他涉及该结点的
+        let foundInOther = false;
+        for (let i = 0; i < ADD_BINARY_LINKS.length; i++) {
+          if (i === step - 1) continue;
+          // 检查该二元体是否包含这个结点
+          if (ADD_BINARY_LINKS[i].some(l => l.from === n || l.to === n)) {
+            // 还要检查这组杆是否在当前仍存在（没被拆除）
+            // 对于remove模式：如果i < step-1，说明已被拆除；如果i > step-1，还存在
+            if (i > step - 1) foundInOther = true;
+          }
+        }
+        if (!foundInOther) return n;
+      }
+    }
+    return null;
+  }
+}
+
+// ============================================================
+// 绘图辅助函数
+// ============================================================
+function drawGrid() {
+  ctx.lineWidth=1; ctx.strokeStyle='#1c2230'; ctx.beginPath();
+  for(let x=CX%SCALE;x<W;x+=SCALE){ctx.moveTo(x,0);ctx.lineTo(x,H);}
+  for(let y=CY%SCALE;y<H;y+=SCALE){ctx.moveTo(0,y);ctx.lineTo(W,y);}
+  ctx.stroke();
+}
+
+function drawNode(id, highlighted, isNew) {
+  const n = NODES[id];
+  if (!n) return;
+  const p = toS(n.x, n.y);
+
+  if (isNew) {
+    // 新结点：放大出现动画
+    const t = Math.min(1, progress * 2);
+    const r = 5 + t * 4;
+    // 光晕
+    const glowR = 25 + 15 * Math.sin(Date.now() / 150);
+    const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowR);
+    grd.addColorStop(0, 'rgba(255,215,0,0.6)');
+    grd.addColorStop(1, 'rgba(255,215,0,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.arc(p.x, p.y, glowR, 0, Math.PI * 2); ctx.fill();
+
+    // 核心圆
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = highlighted ? '#3fb950' : '#58a6ff';
+    ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // 结点编号
+  ctx.fillStyle = isNew ? '#ffd700' : (highlighted ? '#3fb950' : '#e6edf3');
+  ctx.font = 'bold 13px "Segoe UI"';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(id, p.x, p.y - 14);
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawLink(fromId, toId, isNew, newStep) {
+  const A = NODES[fromId], B = NODES[toId];
+  const As = toS(A.x, A.y), Bs = toS(B.x, B.y);
+
+  let alpha = 1;
+  let lineWidth = 3;
+  let color = '#c9d1d9';
+
+  if (isNew) {
+    // 新杆渐显动画
+    if (progress < 0.5) {
+      const t = progress * 2;
+      alpha = t;
+      // 从A向B生长
+      const drawTo = Math.min(1, t);
+      const ex = As.x + (Bs.x - As.x) * drawTo;
+      const ey = As.y + (Bs.y - As.y) * drawTo;
+      ctx.save();
+      ctx.strokeStyle = '#ffd700';
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = 4;
+      ctx.shadowColor = 'rgba(255,215,0,0.6)';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(As.x, As.y);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    } else {
+      alpha = 1;
+      lineWidth = 4;
+      color = '#ffd700';
+    }
+  } else {
+    // 已有杆
+    color = '#8b949e';
+    lineWidth = 3;
+  }
+
+  ctx.save();
+  if (isNew && progress >= 0.5) {
+    ctx.strokeStyle = '#ffd700';
+    ctx.shadowColor = 'rgba(255,215,0,0.4)';
+    ctx.shadowBlur = 6;
+  } else {
+    ctx.strokeStyle = color;
+  }
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(As.x, As.y);
+  ctx.lineTo(Bs.x, Bs.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawDimensionLabel(fromId, toId) {
+  const A = NODES[fromId], B = NODES[toId];
+  const As = toS(A.x, A.y), Bs = toS(B.x, B.y);
+  const mx = (As.x + Bs.x) / 2, my = (As.y + Bs.y) / 2;
+  const dx = Bs.x - As.x, dy = Bs.y - As.y;
+  const len = Math.hypot(dx, dy);
+  const ux = dx / len, uy = dy / len;
+  const nx = -uy, ny = ux;
+
+  ctx.save();
+  ctx.font = 'bold 10px "Consolas", monospace';
+  ctx.fillStyle = 'rgba(88,166,255,0.7)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const label = len.toFixed(1);
+  ctx.fillText(label, mx + nx * 12, my + ny * 12);
+  ctx.restore();
+}
+
+// ============================================================
+// 主要渲染
+// ============================================================
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  drawGrid();
+
+  // 画所有已显示的杆
+  const links = getDisplayedLinks(animStep);
+
+  // 高亮当前步骤新增的杆
+  const newStep = animStep;
+  const linksToDraw = links.filter(l => !l.isNew || l.step === newStep);
+
+  links.forEach(l => {
+    const isNew = (l.isNew && l.step === animStep && progress < 1);
+    // 对于remove模式，不使用isNew
+    if (mode === 'remove') {
+      drawLink(l.from, l.to, false, 0);
+    } else {
+      drawLink(l.from, l.to, isNew, newStep);
+    }
+  });
+
+  // 画所有活跃结点
+  const activeNodes = getActiveNodes(animStep);
+  const newNode = (mode === 'add') ? getNewNodeStep(animStep) : null;
+
+  activeNodes.forEach(nId => {
+    const isNew = (nId === newNode);
+    drawNode(nId, false, isNew);
+  });
+
+  // 当前步骤的二元体高亮
+  if (progress < 1 && animStep > 0) {
+    let currentBinary;
+    if (mode === 'add') {
+      currentBinary = ADD_BINARY_LINKS[animStep - 1];
+    } else {
+      currentBinary = REMOVE_BINARY_LINKS[animStep - 1];
+    }
+    if (currentBinary) {
+      // 画新结点到现有结点的连接线（虚线预览）
+      const alpha = (1 - progress) * 0.5;
+      ctx.save();
+      ctx.strokeStyle = mode === 'add' ? '#ffd700' : '#ff7b72';
+      ctx.globalAlpha = alpha;
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 2;
+      currentBinary.forEach(l => {
+        const A = NODES[l.from], B = NODES[l.to];
+        const As = toS(A.x, A.y), Bs = toS(B.x, B.y);
+        ctx.beginPath();
+        ctx.moveTo(As.x, As.y);
+        ctx.lineTo(Bs.x, Bs.y);
+        ctx.stroke();
+      });
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
+
+  // 桁架整体高亮边框
+  if (mode === 'add' && animStep >= ADD_BINARY_LINKS.length) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(63,185,80,0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 5]);
+    const allNodes = Object.keys(NODES).map(k => toS(NODES[k].x, NODES[k].y));
+    const xs = allNodes.map(p => p.x), ys = allNodes.map(p => p.y);
+    const minX = Math.min(...xs) - 30, maxX = Math.max(...xs) + 30;
+    const minY = Math.min(...ys) - 30, maxY = Math.max(...ys) + 30;
+    ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#3fb950';
+    ctx.font = 'bold 16px "Segoe UI"';
+    ctx.textAlign = 'center';
+    ctx.fillText('✓ 体系几何不变，无多余联系', (minX + maxX) / 2, minY - 10);
+    ctx.restore();
+  }
+
+  if (mode === 'remove' && animStep >= REMOVE_BINARY_LINKS.length) {
+    // 显示基础三角形高亮
+    ctx.save();
+    ctx.strokeStyle = 'rgba(88,166,255,0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 5]);
+    const baseNodes = [1, 2, 3].map(k => toS(NODES[k].x, NODES[k].y));
+    const xs = baseNodes.map(p => p.x), ys = baseNodes.map(p => p.y);
+    const minX = Math.min(...xs) - 30, maxX = Math.max(...xs) + 30;
+    const minY = Math.min(...ys) - 30, maxY = Math.max(...ys) + 30;
+    ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#58a6ff';
+    ctx.font = 'bold 16px "Segoe UI"';
+    ctx.textAlign = 'center';
+    ctx.fillText('✓ 铰结三角形123，几何不变', (minX + maxX) / 2, minY - 10);
+    ctx.restore();
+  }
+}
+
+// ============================================================
+// 动画控制
+// ============================================================
+function totalSteps() {
+  return mode === 'add' ? ADD_BINARY_LINKS.length : REMOVE_BINARY_LINKS.length;
+}
+
+function startAnimation() {
+  animStep = -1;
+  progress = 0;
+  playing = true;
+  lastTime = performance.now();
+  holdTime = 0;
+}
+
+function nextStep() {
+  if (animStep < totalSteps()) {
+    animStep++;
+    progress = 0;
+    updateStepList();
+    updateStepper();
+    updateHint();
+  }
+}
+
+function resetAnim() {
+  animStep = -1;
+  progress = 0;
+  playing = false;
+  updateStepList();
+  updateStepper();
+  updateHint();
+}
+
+function animate(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  if (playing) {
+    if (progress < 1) {
+      progress += dt * 1.2;
+      if (progress > 1) progress = 1;
+    } else {
+      holdTime += dt;
+      if (holdTime > holdDuration) {
+        holdTime = 0;
+        nextStep();
+        if (animStep > totalSteps()) {
+          animStep = totalSteps();
+          playing = false;
+        }
+      }
+    }
+  }
+
+  render();
+  requestAnimationFrame(animate);
+}
+
+// ============================================================
+// UI 更新
+// ============================================================
+function getSteps() {
+  return mode === 'add' ? ADD_STEPS : REMOVE_STEPS;
+}
+
+function updateStepList() {
+  const list = document.getElementById('step-list');
+  const steps = getSteps();
+  list.innerHTML = '';
+  steps.forEach((text, i) => {
+    const li = document.createElement('li');
+    li.className = '';
+    if (i < animStep) li.className = 'done';
+    else if (i === animStep) li.className = 'active';
+    li.innerHTML = `<div class="num">${i + 1}</div><div>${text}</div>`;
+    list.appendChild(li);
+  });
+}
+
+function updateStepper() {
+  const dots = document.querySelectorAll('#stepper .step-dot');
+  const steps = getSteps();
+  dots.forEach((dot, i) => {
+    dot.className = 'step-dot';
+    if (i < animStep) dot.classList.add('done');
+    else if (i === animStep) dot.classList.add('active');
+    if (i >= steps.length) dot.style.display = 'none';
+    else dot.style.display = 'block';
+  });
+}
+
+function updateHint() {
+  const hint = document.getElementById('hint-box');
+  const steps = getSteps();
+  if (animStep < 0 || animStep >= steps.length) {
+    hint.innerHTML = `<span class="icon">▶</span>点击右侧"播放动画"开始演示`;
+    return;
+  }
+  hint.innerHTML = `<span class="icon">▶</span>${steps[animStep]}`;
+}
+
+function updateMode(m) {
+  mode = m;
+  const buttons = document.querySelectorAll('.btn-mode');
+  buttons.forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === m);
+  });
+  resetAnim();
+}
+
+// ============================================================
+// 事件绑定
+// ============================================================
+document.querySelectorAll('.btn-mode').forEach(btn => {
+  btn.addEventListener('click', () => updateMode(btn.dataset.mode));
+});
+
+document.getElementById('btn-play').addEventListener('click', startAnimation);
+document.getElementById('btn-replay').addEventListener('click', () => {
+  resetAnim();
+  setTimeout(startAnimation, 100);
+});
+
+// 初始化
+updateStepList();
+updateStepper();
+updateHint();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

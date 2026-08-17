@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>两刚片规则 · 一铰一链杆 / 三链杆虚铰</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #0d1117; color: #e6edf3; overflow: hidden; }
+  #app { display: flex; height: 100vh; }
+
+  #scene-wrap { flex:1; position:relative; overflow:hidden; background: radial-gradient(circle at 50% 50%, #1b2433 0%, #0a0e16 75%); }
+  #scene { position:absolute; top:0; left:0; width:100%; height:100%; display:block; }
+
+  /* 情形切换 */
+  #mode-bar {
+    position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:11;
+    display:flex; gap:6px; background:rgba(22,27,34,0.85);
+    padding:6px; border-radius:12px; border:1px solid #30363d; backdrop-filter:blur(6px);
+  }
+  .btn-mode {
+    padding:8px 16px; border:none; border-radius:8px; cursor:pointer;
+    background:transparent; color:#8b949e; font-size:12.5px; font-weight:600;
+    transition:all .25s; white-space:nowrap;
+  }
+  .btn-mode:hover:not(.active) { color:#e6edf3; background:rgba(255,255,255,.05); }
+  .btn-mode.active { background:#1f6feb; color:#fff; box-shadow:0 0 10px rgba(31,111,235,.5); }
+
+  /* 顶部步骤指示器 */
+  #stepper {
+    position:absolute; top:62px; left:50%; transform:translateX(-50%); z-index:10;
+    display:flex; gap:4px; background:rgba(22,27,34,0.85);
+    padding:7px 14px; border-radius:12px; border:1px solid #30363d; backdrop-filter:blur(6px);
+  }
+  .step-dot {
+    width:36px; height:6px; border-radius:3px; background:#30363d; transition:all .3s;
+  }
+  .step-dot.active { background:#58a6ff; box-shadow:0 0 8px rgba(88,166,255,.6); }
+  .step-dot.done { background:#3fb950; }
+
+  /* 右侧结论面板 */
+  #conclusion {
+    position:absolute; top:100px; right:16px; z-index:10;
+    background:rgba(22,27,34,0.9); border:1px solid #30363d;
+    padding:16px 20px; border-radius:14px; backdrop-filter:blur(8px);
+    max-width:300px; opacity:0; transform:translateX(20px);
+    transition:opacity .5s, transform .5s;
+  }
+  #conclusion.show { opacity:1; transform:translateX(0); }
+  #conclusion .badge {
+    display:inline-block; padding:4px 12px; border-radius:6px;
+    font-size:12px; font-weight:700; letter-spacing:1px;
+    background:rgba(63,185,80,0.2); color:#3fb950;
+  }
+  #conclusion h3 { font-size:15px; margin:8px 0 4px; color:#e6edf3; }
+  #conclusion .sub { font-size:11.5px; color:#8b949e; margin-bottom:8px; }
+  #conclusion .formula {
+    font-family:"Consolas",monospace; font-size:12.5px; color:#58a6ff;
+    background:rgba(88,166,255,0.08); padding:7px 11px; border-radius:8px;
+    border:1px solid rgba(88,166,255,0.2); margin:8px 0;
+  }
+  #conclusion .desc { font-size:12px; color:#c9d1d9; line-height:1.7; }
+  #conclusion .desc b { color:#3fb950; }
+
+  /* 左下提示文字 */
+  #hint-box {
+    position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:10;
+    background:rgba(22,27,34,0.88); border:1px solid #30363d;
+    padding:11px 22px; border-radius:12px; backdrop-filter:blur(6px);
+    font-size:13.5px; color:#e6edf3; text-align:center; min-width:300px; max-width:560px;
+    transition:opacity .3s;
+  }
+  #hint-box .icon { font-size:17px; margin-right:6px; }
+  #hint-box .highlight { color:#ffd700; font-weight:600; }
+  #hint-box .highlight-green { color:#3fb950; font-weight:600; }
+  #hint-box .highlight-blue { color:#58a6ff; font-weight:600; }
+  #hint-box .highlight-purple { color:#a371f7; font-weight:600; }
+  #hint-box .highlight-pink { color:#f778ba; font-weight:600; }
+
+  /* 右侧控制面板 */
+  #panel {
+    width:290px; background:#161b22; border-left:1px solid #30363d;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  #panel h2 {
+    padding:14px 16px; font-size:14.5px; color:#e6edf3;
+    border-bottom:1px solid #30363d; display:flex; align-items:center; gap:8px;
+  }
+  #panel h2 .dot { width:8px; height:8px; border-radius:50%; background:#3fb950; box-shadow:0 0 8px #3fb950; }
+  #panel-body { flex:1; overflow-y:auto; padding:12px 14px; }
+  #panel-body::-webkit-scrollbar { width:5px; }
+  #panel-body::-webkit-scrollbar-thumb { background:#30363d; border-radius:3px; }
+
+  .btn {
+    width:100%; padding:9px; border:none; border-radius:8px; cursor:pointer;
+    font-size:12.5px; font-weight:600; transition:all .2s; margin-bottom:7px;
+  }
+  .btn.primary { background:#1f6feb; color:#fff; }
+  .btn.primary:hover { background:#388bfd; }
+  .btn.secondary { background:#21262d; color:#c9d1d9; border:1px solid #30363d; }
+  .btn.secondary:hover { background:#30363d; color:#fff; }
+
+  .info-block {
+    padding:11px; background:#0d1117; border:1px solid #21262d;
+    border-radius:10px; margin-bottom:11px; font-size:12px; line-height:1.7; color:#8b949e;
+  }
+  .info-block b { color:#c9d1d9; }
+  .info-block .hl-b { color:#58a6ff; font-weight:600; }
+  .info-block .hl-p { color:#a371f7; font-weight:600; }
+  .info-block .hl-y { color:#ffd700; font-weight:600; }
+  .info-block .hl-g { color:#3fb950; font-weight:600; }
+  .info-block .hl-k { color:#f778ba; font-weight:600; }
+
+  .step-list { list-style:none; padding:0; }
+  .step-list li {
+    display:flex; align-items:flex-start; gap:9px; padding:7px 0;
+    font-size:12px; color:#8b949e; border-bottom:1px solid #21262d;
+  }
+  .step-list li:last-child { border:none; }
+  .step-list .num {
+    width:20px; height:20px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:10.5px; font-weight:700; background:#30363d; color:#8b949e;
+    transition:all .3s;
+  }
+  .step-list li.active .num { background:#1f6feb; color:#fff; }
+  .step-list li.active { color:#e6edf3; }
+  .step-list li.done .num { background:#3fb950; color:#fff; }
+  .step-list li.done { color:#c9d1d9; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scene-wrap">
+    <canvas id="scene"></canvas>
+
+    <div id="mode-bar">
+      <button class="btn-mode active" data-mode="1">情形一：一铰一链杆</button>
+      <button class="btn-mode" data-mode="2">情形二：三链杆（虚铰）</button>
+    </div>
+
+    <div id="stepper">
+      <div class="step-dot" data-s="0"></div>
+      <div class="step-dot" data-s="1"></div>
+      <div class="step-dot" data-s="2"></div>
+      <div class="step-dot" data-s="3"></div>
+      <div class="step-dot" data-s="4"></div>
+    </div>
+
+    <div id="conclusion">
+      <span class="badge">结论</span>
+      <h3>几何不变，无多余联系</h3>
+      <div class="sub" id="conc-sub">两刚片规则（一铰一链杆）</div>
+      <div class="formula" id="conc-formula">约束 = 2(铰) + 1(链杆) = 3<br>自由度 = 3 − 3 = 0</div>
+      <div class="desc" id="conc-desc">
+        一个<b>实铰</b>提供 2 个约束，一根<b>不通过铰的链杆</b>提供 1 个约束。
+        约束总数 = 3，恰好消除 3 个自由度，<b>几何不变且无多余约束</b>。
+      </div>
+    </div>
+
+    <div id="hint-box">
+      <span class="icon">▶</span>点击右侧"播放动画"开始演示
+    </div>
+  </div>
+
+  <div id="panel">
+    <h2><span class="dot"></span><span>两刚片规则</span></h2>
+    <div id="panel-body">
+      <div class="info-block">
+        <b>规则内容</b><br>
+        两个刚片用一个<span class="hl-p">铰</span>和一根<span class="hl-y">不通过此铰的链杆</span>相连，
+        或用<span class="hl-y">三根链杆</span>相连（其中两根形成<span class="hl-p">虚铰</span>，第三根不通过虚铰），
+        则体系<span class="hl-g">几何不变，且无多余联系</span>。
+      </div>
+
+      <button class="btn primary" id="btn-play">▶ 播放动画</button>
+      <button class="btn secondary" id="btn-replay">↺ 重新播放</button>
+
+      <div class="info-block">
+        <b>动画步骤</b>
+        <ul class="step-list" id="step-list"></ul>
+      </div>
+
+      <div class="info-block" id="key-info">
+        <b>关键判定</b><br>
+        · <span class="hl-p">铰</span>提供 <span class="hl-p">2个约束</span>（限制x、y移动）<br>
+        · <span class="hl-y">链杆</span>提供 <span class="hl-y">1个约束</span>（限制杆长方向位移）<br>
+        · 链杆延长线<span class="hl-y">不通过铰点</span> → 约束独立<br>
+        · 总约束 = 3 = 刚片自由度 3 → <span class="hl-g">无多余</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Canvas 初始化
+// ============================================================
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, CX = 0, CY = 0;
+const SCALE = 85;
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = w; H = h; CX = W/2; CY = H/2 + 30;
+}
+window.addEventListener('resize', resize);
+window.addEventListener('load', resize);
+requestAnimationFrame(resize);
+function toS(x,y){ return { x: CX + x*SCALE, y: CY - y*SCALE }; }
+
+function localToWorld(rig, lx, ly) {
+  const c = Math.cos(rig.theta * Math.PI/180);
+  const s = Math.sin(rig.theta * Math.PI/180);
+  return { x: rig.x + lx*c - ly*s, y: rig.y + lx*s + ly*c };
+}
+
+function lineIntersect(p1, p2, p3, p4) {
+  const x1=p1.x,y1=p1.y,x2=p2.x,y2=p2.y,x3=p3.x,y3=p3.y,x4=p4.x,y4=p4.y;
+  const denom = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4);
+  if (Math.abs(denom) < 1e-10) return null;
+  const t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / denom;
+  return { x: x1 + t*(x2-x1), y: y1 + t*(y2-y1) };
+}
+
+// ============================================================
+// 两种情形配置
+// ============================================================
+let mode = 1;
+
+// 情形一：一实铰 + 一链杆（V形布局：左端铰接、张开角度、右端链杆连接）
+// 两刚片左端尖点铰接于世界(-1.5, 0)，向右张开成V形
+// R1(上): theta=-15°（向右上倾斜），左端尖(lx=-2.5,ly=0)铰接
+// R2(下): theta=+15°（向右下倾斜），左端尖(lx=-2.5,ly=0)铰接
+// 链杆: 连接两刚片右侧边缘
+//   椭圆 a=2.5 b=0.75，在 lx=2.2 处 ly=±0.75·√(1-(2.2/2.5)²)=±0.356
+//   R1下边缘 A(2.2, +0.356), R2上边缘 B(2.2, -0.356)
+//   变换后链杆在世界 x≈3.13 处垂直连接，远离铰(-1.5,0)，不共线
+const cfg1 = {
+  R1: { x: 0.9148, y: -0.6470, theta: -15, a: 2.5, b: 0.75 },
+  R2: { x: 0.9148, y:  0.6470, theta:  15, a: 2.5, b: 0.75 },
+  hinge: { pt1: {lx: -2.5, ly: 0}, pt2: {lx: -2.5, ly: 0} },
+  links: [
+    { A: {lx: 2.2, ly: 0.356}, B: {lx: 2.2, ly: -0.356} }
+  ],
+};
+
+// 情形二：三链杆虚铰（两个水平椭圆刚片，间距大幅拉开）
+// 椭圆尺寸: a=2.5, b=0.75
+// R1(上): 水平，中心(0,-1.1)
+// R2(下): 水平，中心(0, 1.1)
+// 中心距 = 2.2（之前为1.2，+83%）
+// 视觉缝隙 = 2.2 - 0.75 - 0.75 = 0.7 单位（明显可见的缝隙）
+//
+// 椭圆边界: ly = ±0.75·√(1-(lx/2.5)²)
+//   lx=±2.2 → ly≈±0.2892
+//   lx=±1.8 → ly≈±0.4593
+//   lx=±1.0 → ly≈±0.6874
+//   lx=±0.5 → ly≈±0.7348
+const cfg2 = {
+  R1: { x: 0, y: -1.1, theta: 0, a: 2.5, b: 0.75 },
+  R2: { x: 0, y:  1.1, theta: 0, a: 2.5, b: 0.75 },
+  hinge: null,
+  links: [
+    // 链杆① 左远端（陡）
+    { A: {lx: -2.2, ly:  0.289}, B: {lx: -1.9, ly: -0.431} },
+    // 链杆② 左近中心（平缓）
+    { A: {lx: -1.0, ly:  0.687}, B: {lx: -0.5, ly: -0.735} },
+    // 链杆③ 右侧（不通过虚铰）
+    { A: {lx:  2.2, ly:  0.289}, B: {lx:  1.8, ly: -0.459} },
+  ],
+};
+
+function getCfg() { return mode === 1 ? cfg1 : cfg2; }
+
+function computeVirtualHinge() {
+  if (mode !== 2) return null;
+  const c = cfg2;
+  const A0 = localToWorld(c.R1, c.links[0].A.lx, c.links[0].A.ly);
+  const B0 = localToWorld(c.R2, c.links[0].B.lx, c.links[0].B.ly);
+  const A1 = localToWorld(c.R1, c.links[1].A.lx, c.links[1].A.ly);
+  const B1 = localToWorld(c.R2, c.links[1].B.lx, c.links[1].B.ly);
+  return lineIntersect(A0, B0, A1, B1);
+}
+
+// ============================================================
+// 动画状态
+// ============================================================
+let animStep = -1;
+let blinkPhase = 0;
+let playing = false;
+const STEP_DURATIONS = [2.0, 2.2, 1.8, 2.0, 2.5];
+
+const STEP_TEXTS = {
+  1: [
+    '圈出<span class="highlight-blue">刚片1</span>和<span class="highlight-pink">刚片2</span>——两个被分析的刚片',
+    '圈出<span class="highlight-purple">铰</span>——两刚片在此铰接，提供 2 个约束',
+    '圈出<span class="highlight">链杆</span>——连接两刚片，提供 1 个约束',
+    '<span class="highlight">链杆延长线不通过铰点</span>——约束相互独立，无多余联系',
+    '结论：体系是<span class="highlight-green">几何不变的，且没有多余联系</span>',
+  ],
+  2: [
+    '圈出<span class="highlight-blue">刚片1</span>和<span class="highlight-pink">刚片2</span>——两个被分析的刚片',
+    '圈出<span class="highlight">链杆①②</span>——延长线相交形成<span class="highlight-purple">虚铰</span>（等效 2 个约束）',
+    '圈出<span class="highlight">链杆③</span>——连接两刚片，提供 1 个约束',
+    '<span class="highlight">链杆③延长线不通过虚铰</span>——约束相互独立，无多余联系',
+    '结论：体系是<span class="highlight-green">几何不变的，且没有多余联系</span>',
+  ],
+};
+
+const STEP_LIST_HTML = {
+  1: [
+    '<span class="num">1</span><span>圈出<span class="hl-b">刚片1</span>和<span class="hl-k">刚片2</span>（闪烁高亮）</span>',
+    '<span class="num">2</span><span>圈出<span class="hl-p">铰</span>（两刚片在此铰接）</span>',
+    '<span class="num">3</span><span>圈出<span class="hl-y">链杆</span>（连接两刚片）</span>',
+    '<span class="num">4</span><span>链杆延长线<span class="hl-y">不通过铰点</span></span>',
+    '<span class="num">5</span><span>结论：<span class="hl-g">几何不变，无多余联系</span></span>',
+  ],
+  2: [
+    '<span class="num">1</span><span>圈出<span class="hl-b">刚片1</span>和<span class="hl-k">刚片2</span>（闪烁高亮）</span>',
+    '<span class="num">2</span><span>圈出<span class="hl-y">链杆①②</span> → 交点为<span class="hl-p">虚铰</span></span>',
+    '<span class="num">3</span><span>圈出<span class="hl-y">链杆③</span>（连接两刚片）</span>',
+    '<span class="num">4</span><span>链杆③延长线<span class="hl-y">不通过虚铰</span></span>',
+    '<span class="num">5</span><span>结论：<span class="hl-g">几何不变，无多余联系</span></span>',
+  ],
+};
+
+// ============================================================
+// 绘图函数
+// ============================================================
+function drawGrid() {
+  ctx.lineWidth=1; ctx.strokeStyle='#1c2230'; ctx.beginPath();
+  for(let x=CX%SCALE;x<W;x+=SCALE){ctx.moveTo(x,0);ctx.lineTo(x,H);}
+  for(let y=CY%SCALE;y<H;y+=SCALE){ctx.moveTo(0,y);ctx.lineTo(W,y);}
+  ctx.stroke();
+}
+
+// 椭圆刚片（带斜线阴影）
+function drawRigid(rig, colors, label) {
+  const p = toS(rig.x, rig.y);
+  const theta = -rig.theta * Math.PI/180;
+  const a = rig.a*SCALE, b = rig.b*SCALE;
+
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(theta);
+
+  // 填充底色
+  ctx.fillStyle = colors[0];
+  ctx.beginPath(); ctx.ellipse(0, 0, a, b, 0, 0, Math.PI*2); ctx.fill();
+
+  // 斜线阴影
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(0, 0, a, b, 0, 0, Math.PI*2);
+  ctx.clip();
+  ctx.strokeStyle = colors[1];
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.6;
+  // 在椭圆区域内画斜线
+  const spacing = 8;
+  for (let i = -a - b; i < a + b; i += spacing) {
+    // 画通过椭圆的线段
+    ctx.beginPath();
+    ctx.moveTo(i, -b*2);
+    ctx.lineTo(i + b*2, b*2);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 边框
+  ctx.strokeStyle = colors[2];
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.ellipse(0, 0, a, b, 0, 0, Math.PI*2); ctx.stroke();
+
+  // 中心线
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4,3]);
+  ctx.beginPath();
+  ctx.moveTo(-a, 0); ctx.lineTo(a, 0);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 中心十字
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-7, 0); ctx.lineTo(7, 0);
+  ctx.moveTo(0, -7); ctx.lineTo(0, 7);
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI*2); ctx.fill();
+
+  ctx.restore();
+
+  // 标签
+  ctx.font = 'bold 14px "Segoe UI"';
+  ctx.fillStyle = colors[2];
+  ctx.textAlign = 'center';
+  const labelOffset = b*0.8 + 12;
+  ctx.fillText(label, p.x, p.y - labelOffset);
+  ctx.textAlign = 'start';
+}
+
+// 链杆（两端粗中间细的工程杆样式）
+function drawLink(Aw, Bw, color='#ffd700') {
+  const As = toS(Aw.x, Aw.y), Bs = toS(Bw.x, Bw.y);
+  const dx = Bs.x - As.x, dy = Bs.y - As.y;
+  const len = Math.hypot(dx, dy) || 1;
+  ctx.save();
+  ctx.translate(As.x, As.y);
+  ctx.rotate(Math.atan2(dy, dx));
+  const w = len, h = 8;
+  // 杆身渐变
+  const grad = ctx.createLinearGradient(0, -4, 0, 4);
+  grad.addColorStop(0, '#b8860b');
+  grad.addColorStop(0.5, color);
+  grad.addColorStop(1, '#b8860b');
+  ctx.fillStyle = grad;
+  ctx.strokeStyle = '#8b6914';
+  ctx.lineWidth = 1;
+  // 圆角矩形
+  const r = 4;
+  ctx.beginPath();
+  ctx.moveTo(r, -h/2);
+  ctx.lineTo(w-r, -h/2);
+  ctx.lineTo(w, -h/2+r);
+  ctx.lineTo(w, h/2-r);
+  ctx.lineTo(w-r, h/2);
+  ctx.lineTo(r, h/2);
+  ctx.lineTo(0, h/2-r);
+  ctx.lineTo(0, -h/2+r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+  // 两端铰链
+  drawPin(As.x, As.y, color);
+  drawPin(Bs.x, Bs.y, color);
+}
+
+function drawPin(x, y, color='#ffd700') {
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(x, y, 5.5, 0, Math.PI*2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, 2.5, 0, Math.PI*2);
+  ctx.fill();
+}
+
+// 实铰
+function drawHinge(ptWorld, color='#a371f7', size=9) {
+  const s = toS(ptWorld.x, ptWorld.y);
+  const grd = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, 28);
+  grd.addColorStop(0, 'rgba(163,113,247,0.5)');
+  grd.addColorStop(1, 'rgba(163,113,247,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, 28, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#161b22';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, size, 0, Math.PI*2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, size*0.4, 0, Math.PI*2);
+  ctx.fill();
+}
+
+// 虚铰
+function drawVirtualHinge(ptWorld, color='#a371f7', size=11) {
+  const s = toS(ptWorld.x, ptWorld.y);
+  const grd = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, 30);
+  grd.addColorStop(0, 'rgba(163,113,247,0.35)');
+  grd.addColorStop(1, 'rgba(163,113,247,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, 30, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, size+5, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#0d1117';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, size, 0, Math.PI*2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(s.x-5, s.y); ctx.lineTo(s.x+5, s.y);
+  ctx.moveTo(s.x, s.y-5); ctx.lineTo(s.x, s.y+5);
+  ctx.stroke();
+}
+
+// 高亮椭圆（闪烁）
+function drawHighlightEllipse(cx, cy, a, b, angle, color, alpha, lineWidth=3) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = lineWidth;
+  ctx.setLineDash([10, 6]);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, a + 12, b + 12, 0, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// 链杆编号标注
+function drawLinkLabel(Aw, Bw, label, color='#ffd700') {
+  const As = toS(Aw.x, Aw.y), Bs = toS(Bw.x, Bw.y);
+  const mx = (As.x+Bs.x)/2, my = (As.y+Bs.y)/2;
+  const dx = Bs.x - As.x, dy = Bs.y - As.y, len = Math.hypot(dx, dy) || 1;
+  const nx = -dy/len, ny = dx/len;
+  ctx.save();
+  ctx.font = 'bold 13px "Segoe UI"';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, mx + nx*16, my + ny*16);
+  ctx.restore();
+}
+
+// ============================================================
+// 提示文字 & 步骤UI
+// ============================================================
+function setHint(html) {
+  const el = document.getElementById('hint-box');
+  el.innerHTML = html;
+  el.style.opacity = '1';
+}
+
+function updateStepUI(step) {
+  document.querySelectorAll('.step-dot').forEach((el, i) => {
+    el.classList.remove('active', 'done');
+    if (i < step) el.classList.add('done');
+    else if (i === step) el.classList.add('active');
+  });
+  document.querySelectorAll('#step-list li').forEach((el, i) => {
+    el.classList.remove('active', 'done');
+    if (i < step) el.classList.add('done');
+    else if (i === step) el.classList.add('active');
+  });
+  const conc = document.getElementById('conclusion');
+  if (step >= 4) conc.classList.add('show');
+  else conc.classList.remove('show');
+}
+
+function updateModeUI() {
+  document.querySelectorAll('.btn-mode').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.mode) === mode);
+  });
+  const ul = document.getElementById('step-list');
+  ul.innerHTML = STEP_LIST_HTML[mode].map((t,i) =>
+    `<li data-s="${i}">${t}</li>`).join('');
+  if (mode === 1) {
+    document.getElementById('conc-sub').textContent = '两刚片规则（一铰一链杆）';
+    document.getElementById('conc-formula').innerHTML = '约束 = 2(铰) + 1(链杆) = 3<br>自由度 = 3 − 3 = 0';
+    document.getElementById('conc-desc').innerHTML =
+      '一个<b>实铰</b>提供 2 个约束，一根<b>不通过铰的链杆</b>提供 1 个约束。约束总数 = 3，<b>几何不变且无多余约束</b>。';
+  } else {
+    document.getElementById('conc-sub').textContent = '两刚片规则（三链杆·虚铰）';
+    document.getElementById('conc-formula').innerHTML = '约束 = 2(虚铰) + 1(链杆③) = 3<br>自由度 = 3 − 3 = 0';
+    document.getElementById('conc-desc').innerHTML =
+      '两根链杆延长线交点形成<b>虚铰</b>（等效 2 约束），第三根链杆不通过虚铰（1 约束）。约束总数 = 3，<b>几何不变且无多余约束</b>。';
+  }
+  const ki = document.getElementById('key-info');
+  if (mode === 1) {
+    ki.innerHTML = '<b>关键判定</b><br>· <span class="hl-p">铰</span>提供 <span class="hl-p">2个约束</span>（限制x、y移动）<br>· <span class="hl-y">链杆</span>提供 <span class="hl-y">1个约束</span>（限制杆长方向位移）<br>· 链杆延长线<span class="hl-y">不通过铰点</span> → 约束独立<br>· 总约束 = 3 = 刚片自由度 3 → <span class="hl-g">无多余</span>';
+  } else {
+    ki.innerHTML = '<b>关键判定</b><br>· <span class="hl-y">链杆①②</span>延长线相交 → <span class="hl-p">虚铰</span>（等效 2 约束）<br>· <span class="hl-y">链杆③</span>提供 <span class="hl-y">1个约束</span>（限制杆长方向位移）<br>· 链杆③延长线<span class="hl-y">不通过虚铰</span> → 约束独立<br>· 总约束 = 3 = 刚片自由度 3 → <span class="hl-g">无多余</span>';
+  }
+}
+
+// ============================================================
+// 主渲染
+// ============================================================
+function render() {
+  if (W < 2 || H < 2) resize();
+  blinkPhase += 0.05;
+  const blink = (Math.sin(blinkPhase * 3) + 1) / 2;
+
+  ctx.clearRect(0, 0, W, H);
+  drawGrid();
+
+  const cfg = getCfg();
+  const R1 = cfg.R1, R2 = cfg.R2;
+
+  const linkWorlds = cfg.links.map(l => ({
+    A: localToWorld(R1, l.A.lx, l.A.ly),
+    B: localToWorld(R2, l.B.lx, l.B.ly),
+  }));
+
+  let hingeW = null, vhW = null;
+  if (cfg.hinge) {
+    hingeW = localToWorld(R1, cfg.hinge.pt1.lx, cfg.hinge.pt1.ly);
+  }
+  if (mode === 2) {
+    vhW = computeVirtualHinge();
+  }
+
+  // ---- Step 0: 高亮两个刚片 ----
+  if (animStep === 0) {
+    const alpha = 0.4 + blink * 0.6;
+    const r1s = toS(R1.x, R1.y), r2s = toS(R2.x, R2.y);
+    drawHighlightEllipse(r1s.x, r1s.y, R1.a*SCALE, R1.b*SCALE, R1.theta * Math.PI/180, '#58a6ff', alpha, 3);
+    drawHighlightEllipse(r2s.x, r2s.y, R2.a*SCALE, R2.b*SCALE, R2.theta * Math.PI/180, '#f778ba', alpha, 3);
+  }
+
+  // 画刚片
+  drawRigid(R1, ['rgba(31,111,235,0.35)','rgba(88,166,255,0.65)','#58a6ff'], '刚片 1');
+  drawRigid(R2, ['rgba(247,120,186,0.35)','rgba(247,120,186,0.65)','#f778ba'], '刚片 2');
+
+  // ---- Step 1 ----
+  if (animStep === 1) {
+    const alpha = 0.4 + blink * 0.6;
+    if (mode === 1) {
+      const hs = toS(hingeW.x, hingeW.y);
+      ctx.save();
+      ctx.strokeStyle = '#a371f7';
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = 3.5;
+      ctx.setLineDash([8, 5]);
+      ctx.beginPath();
+      ctx.arc(hs.x, hs.y, 26, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+      ctx.font = 'bold 13px "Segoe UI"';
+      ctx.fillStyle = `rgba(163,113,247,${alpha})`;
+      ctx.fillText('铰（2个约束）', hs.x - 8, hs.y - 32);
+    } else {
+      // 高亮链杆①②
+      [0, 1].forEach(i => {
+        const As = toS(linkWorlds[i].A.x, linkWorlds[i].A.y);
+        const Bs = toS(linkWorlds[i].B.x, linkWorlds[i].B.y);
+        const mx = (As.x+Bs.x)/2, my = (As.y+Bs.y)/2;
+        const dx = Bs.x-As.x, dy = Bs.y-As.y, len = Math.hypot(dx, dy);
+        const angle = Math.atan2(dy, dx);
+        ctx.save();
+        ctx.translate(mx, my);
+        ctx.rotate(angle);
+        ctx.strokeStyle = '#ffd700';
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = 3.5;
+        ctx.setLineDash([8, 5]);
+        const padX = 8, padY = 14;
+        ctx.beginPath();
+        ctx.moveTo(-len/2-padX, -padY);
+        ctx.lineTo(len/2+padX, -padY);
+        ctx.lineTo(len/2+padX, padY);
+        ctx.lineTo(-len/2-padX, padY);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      });
+      // 画延长线
+      [0, 1].forEach(i => {
+        const As = toS(linkWorlds[i].A.x, linkWorlds[i].A.y);
+        const Bs = toS(linkWorlds[i].B.x, linkWorlds[i].B.y);
+        const dx = Bs.x-As.x, dy = Bs.y-As.y, len = Math.hypot(dx, dy) || 1;
+        const ux = dx/len, uy = dy/len;
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.strokeStyle = 'rgba(255,215,0,0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(As.x - ux*350, As.y - uy*350);
+        ctx.lineTo(Bs.x + ux*350, Bs.y + uy*350);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      });
+      drawLinkLabel(linkWorlds[0].A, linkWorlds[0].B, '①', `rgba(255,215,0,${alpha})`);
+      drawLinkLabel(linkWorlds[1].A, linkWorlds[1].B, '②', `rgba(255,215,0,${alpha})`);
+      if (vhW) {
+        const vs = toS(vhW.x, vhW.y);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = '#a371f7';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.arc(vs.x, vs.y, 18, 0, Math.PI*2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = 'bold 12px "Segoe UI"';
+        ctx.fillStyle = `rgba(163,113,247,${alpha})`;
+        ctx.fillText('虚铰', vs.x + 22, vs.y - 6);
+        ctx.restore();
+      }
+    }
+  }
+
+  // 画实铰
+  if (hingeW) drawHinge(hingeW, '#a371f7');
+
+  // 画虚铰
+  if (vhW && animStep >= 1) drawVirtualHinge(vhW, '#a371f7');
+
+  // ---- Step 2 ----
+  if (animStep === 2) {
+    const alpha = 0.4 + blink * 0.6;
+    const idx = (mode === 1) ? 0 : 2;
+    const As = toS(linkWorlds[idx].A.x, linkWorlds[idx].A.y);
+    const Bs = toS(linkWorlds[idx].B.x, linkWorlds[idx].B.y);
+    const mx = (As.x+Bs.x)/2, my = (As.y+Bs.y)/2;
+    const dx = Bs.x-As.x, dy = Bs.y-As.y, len = Math.hypot(dx, dy);
+    const angle = Math.atan2(dy, dx);
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.rotate(angle);
+    ctx.strokeStyle = '#ffd700';
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 3.5;
+    ctx.setLineDash([8, 5]);
+    const padX = 8, padY = 14;
+    ctx.beginPath();
+    ctx.moveTo(-len/2-padX, -padY);
+    ctx.lineTo(len/2+padX, -padY);
+    ctx.lineTo(len/2+padX, padY);
+    ctx.lineTo(-len/2-padX, padY);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    ctx.font = 'bold 13px "Segoe UI"';
+    const label = (mode === 1) ? '链杆（1个约束）' : '链杆③（1个约束）';
+    ctx.fillStyle = `rgba(255,215,0,${alpha})`;
+    ctx.fillText(label, Bs.x + 16, Bs.y - 12);
+    if (mode === 2) drawLinkLabel(linkWorlds[2].A, linkWorlds[2].B, '③', `rgba(255,215,0,${alpha})`);
+  }
+
+  // 画所有链杆
+  linkWorlds.forEach(lw => drawLink(lw.A, lw.B, '#ffd700'));
+
+  if (mode === 2) {
+    drawLinkLabel(linkWorlds[0].A, linkWorlds[0].B, '①');
+    drawLinkLabel(linkWorlds[1].A, linkWorlds[1].B, '②');
+    drawLinkLabel(linkWorlds[2].A, linkWorlds[2].B, '③');
+  }
+
+  // ---- Step 3: 延长线 + 不共线标记 ----
+  if (animStep === 3) {
+    const alpha = 0.5 + blink * 0.5;
+    const idx = (mode === 1) ? 0 : 2;
+    const refPt = (mode === 1) ? hingeW : vhW;
+    const Aw = linkWorlds[idx].A, Bw = linkWorlds[idx].B;
+    const As = toS(Aw.x, Aw.y), Bs = toS(Bw.x, Bw.y), Hs = toS(refPt.x, refPt.y);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const dx = Bs.x - As.x, dy = Bs.y - As.y, len = Math.hypot(dx, dy) || 1;
+    const ux = dx/len, uy = dy/len;
+    ctx.strokeStyle = 'rgba(255,215,0,0.5)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.moveTo(As.x - ux*300, As.y - uy*300);
+    ctx.lineTo(Bs.x + ux*300, Bs.y + uy*300);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = '#ff7b72';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(Hs.x-10, Hs.y-10); ctx.lineTo(Hs.x+10, Hs.y+10);
+    ctx.moveTo(Hs.x+10, Hs.y-10); ctx.lineTo(Hs.x-10, Hs.y+10);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.font = 'bold 13px "Segoe UI"';
+    const refName = (mode === 1) ? '铰' : '虚铰';
+    ctx.fillStyle = `rgba(255,215,0,${alpha})`;
+    ctx.fillText('链杆延长线', (As.x+Bs.x)/2 + 30, (As.y+Bs.y)/2 - 30);
+    ctx.fillStyle = `rgba(255,123,114,${alpha})`;
+    ctx.fillText(refName + '不在延长线上 ✗', Hs.x - 60, Hs.y + 28);
+  }
+
+  // ---- Step 4: 结论 ----
+  if (animStep === 4) {
+    const alpha = 0.3 + blink * 0.4;
+    const r1s = toS(R1.x, R1.y), r2s = toS(R2.x, R2.y);
+    ctx.save();
+    ctx.strokeStyle = '#3fb950';
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([12, 6]);
+    // 用两个椭圆的包围盒
+    const bx = Math.min(r1s.x, r2s.x) - 40;
+    const by = Math.min(r1s.y, r2s.y) - 40;
+    const bw = Math.abs(r1s.x - r2s.x) + Math.max(R1.a*SCALE, R2.a*SCALE) * 2 + 80;
+    const bh = Math.abs(r1s.y - r2s.y) + (R1.b*SCALE + R2.b*SCALE) * 2 + 80;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    const cx = (r1s.x + r2s.x) / 2, cy = (r1s.y + r2s.y) / 2;
+    ctx.save();
+    ctx.globalAlpha = 0.7 + blink * 0.3;
+    ctx.strokeStyle = '#3fb950';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx-12, cy);
+    ctx.lineTo(cx-4, cy+8);
+    ctx.lineTo(cx+12, cy-10);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  requestAnimationFrame(render);
+}
+
+// ============================================================
+// 动画播放逻辑
+// ============================================================
+function startAnimation() {
+  playing = true;
+  animStep = 0;
+  updateStepUI(0);
+  setHint('<span class="icon">①</span>' + STEP_TEXTS[mode][0]);
+  advanceStep();
+}
+
+function advanceStep() {
+  if (animStep < 0 || animStep > 4) return;
+  const dur = STEP_DURATIONS[animStep] || 2;
+  setTimeout(() => {
+    if (!playing) return;
+    animStep++;
+    if (animStep > 4) { playing = false; return; }
+    updateStepUI(animStep);
+    const icons = ['①','②','③','④','✓'];
+    setHint('<span class="icon">' + icons[animStep] + '</span>' + STEP_TEXTS[mode][animStep]);
+    advanceStep();
+  }, dur * 1000);
+}
+
+// ============================================================
+// 事件绑定
+// ============================================================
+document.getElementById('btn-play').addEventListener('click', () => {
+  if (!playing) startAnimation();
+});
+document.getElementById('btn-replay').addEventListener('click', () => {
+  playing = false;
+  setTimeout(() => startAnimation(), 100);
+});
+document.querySelectorAll('.btn-mode').forEach(el => {
+  el.addEventListener('click', () => {
+    const m = parseInt(el.dataset.mode);
+    if (m === mode) return;
+    mode = m;
+    playing = false;
+    animStep = -1;
+    updateModeUI();
+    updateStepUI(-1);
+    setHint('<span class="icon">▶</span>已切换到情形' + (mode===1?'一':'二') + '，点击"播放动画"开始演示');
+    document.getElementById('conclusion').classList.remove('show');
+  });
+});
+
+// ============================================================
+// 初始化
+// ============================================================
+updateModeUI();
+render();
+</script>
+</body>
+</html>

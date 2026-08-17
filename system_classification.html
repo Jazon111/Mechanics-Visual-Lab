@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>几何体系分类 · 可变 / 瞬变 / 不变</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #0d1117; color: #e6edf3; overflow: hidden; }
+  #app { display: flex; height: 100vh; }
+
+  #scene-wrap { flex:1; position:relative; overflow:hidden; background: radial-gradient(circle at 50% 50%, #1b2433 0%, #0a0e16 75%); }
+  #scene { position:absolute; top:0; left:0; width:100%; height:100%; display:block; }
+
+  #topbar {
+    position:absolute; top:16px; left:50%; transform:translateX(-50%);
+    display:flex; gap:6px; z-index:10; background:rgba(22,27,34,0.85);
+    padding:6px; border-radius:12px; border:1px solid #30363d; backdrop-filter:blur(6px);
+  }
+  .btn-mode {
+    padding:9px 18px; border:none; border-radius:8px; cursor:pointer;
+    background:transparent; color:#8b949e; font-size:13px; font-weight:600;
+    transition:all .25s; white-space:nowrap;
+  }
+  .btn-mode:hover:not(.active) { color:#e6edf3; background:rgba(255,255,255,.05); }
+  .btn-mode[data-sys="var"].active    { background:#f85149; color:#fff; box-shadow:0 0 12px rgba(248,81,73,.5); }
+  .btn-mode[data-sys="inst"].active   { background:#ffd700; color:#1a1a00; box-shadow:0 0 12px rgba(255,215,0,.5); }
+  .btn-mode[data-sys="inv"].active    { background:#3fb950; color:#0a2208; box-shadow:0 0 12px rgba(63,185,80,.5); }
+
+  /* 体系状态大标签 */
+  #status-badge {
+    position:absolute; top:16px; right:16px; z-index:10;
+    padding:14px 18px; border-radius:12px; backdrop-filter:blur(6px);
+    border:1px solid #30363d; background:rgba(22,27,34,0.85);
+    min-width:260px;
+  }
+  #status-badge .tag {
+    display:inline-block; padding:3px 10px; border-radius:6px;
+    font-size:12px; font-weight:700; letter-spacing:1px;
+  }
+  .tag-var  { background:rgba(248,81,73,0.2);  color:#ff7b72; }
+  .tag-inst { background:rgba(255,215,0,0.2); color:#ffd700; }
+  .tag-inv  { background:rgba(63,185,80,0.2); color:#3fb950; }
+
+  #status-badge .title { font-size:16px; font-weight:700; margin-top:6px; }
+  #status-badge .desc  { font-size:12px; color:#8b949e; line-height:1.6; margin-top:6px; }
+  #status-badge .sep   { height:1px; background:#30363d; margin:10px 0; }
+  #status-badge .row   { display:flex; justify-content:space-between; font-size:12px; line-height:1.9; }
+  #status-badge .k { color:#8b949e; }
+  #status-badge .v { font-family:"Consolas",monospace; color:#e6edf3; }
+  #status-badge .v.warn { color:#ffd700; }
+  #status-badge .v.bad  { color:#ff7b72; }
+  #status-badge .v.good { color:#3fb950; }
+
+  /* 坐标/约束显示 */
+  #coord-display {
+    position:absolute; bottom:16px; left:16px; z-index:10;
+    background:rgba(13,17,23,0.85); border:1px solid #30363d;
+    padding:12px 16px; border-radius:10px; backdrop-filter:blur(6px);
+    font-family:"Consolas",monospace; font-size:12.5px; line-height:1.8; min-width:260px;
+  }
+  #coord-display .t { color:#c9d1d9; font-size:12px; margin-bottom:6px; font-family:"Segoe UI"; letter-spacing:1px; }
+  #coord-display .hdr { color:#8b949e; font-size:10.5px; letter-spacing:1.5px; margin-top:6px; }
+  #coord-display .row { display:flex; justify-content:space-between; gap:10px; }
+  #coord-display .key { color:#8b949e; }
+  #coord-display .val { font-weight:600; }
+  #coord-display .val.x { color:#f85149; }
+  #coord-display .val.y { color:#3fb950; }
+  #coord-display .val.a { color:#ffd700; }
+
+  /* 图例 */
+  #legend {
+    position:absolute; bottom:16px; right:16px; z-index:10;
+    background:rgba(13,17,23,0.85); border:1px solid #30363d;
+    padding:10px 14px; border-radius:10px; backdrop-filter:blur(6px);
+    font-size:11.5px; line-height:1.8; color:#c9d1d9;
+  }
+  #legend h4 { font-size:11px; color:#8b949e; letter-spacing:1.5px; margin-bottom:6px; }
+  #legend .lg-row { display:flex; align-items:center; gap:8px; }
+  #legend .sw { width:24px; height:3px; border-radius:2px; }
+  #legend .sw.c { width:11px; height:11px; border-radius:50%; }
+
+  /* 右侧控制面板 */
+  #panel {
+    width:340px; background:#161b22; border-left:1px solid #30363d;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  #panel h2 {
+    padding:16px; font-size:16px; color:#e6edf3;
+    border-bottom:1px solid #30363d; display:flex; align-items:center; gap:8px;
+  }
+  #panel h2 .dot { width:8px; height:8px; border-radius:50%; background:#58a6ff; box-shadow:0 0 8px #58a6ff; }
+  #panel-body { flex:1; overflow-y:auto; padding:12px 16px; }
+  #panel-body::-webkit-scrollbar { width:6px; }
+  #panel-body::-webkit-scrollbar-thumb { background:#30363d; border-radius:3px; }
+
+  .group { margin-bottom:16px; padding:12px; background:#0d1117; border:1px solid #21262d; border-radius:10px; }
+  .group-title {
+    font-size:12px; color:#8b949e; text-transform:uppercase;
+    letter-spacing:1.5px; margin-bottom:10px; display:flex; align-items:center; gap:6px;
+  }
+  .group-title .tag { font-size:10px; padding:2px 6px; border-radius:4px; background:#30363d; color:#c9d1d9; }
+  .group-title .tag.bad { background:rgba(248,81,73,0.2); color:#ff7b72; }
+  .group-title .tag.warn { background:rgba(255,215,0,0.2); color:#ffd700; }
+  .group-title .tag.good { background:rgba(63,185,80,0.2); color:#3fb950; }
+
+  .swatch {
+    display:flex; gap:6px; margin-bottom:10px;
+  }
+  .sw { flex:1; padding:8px; border-radius:8px; text-align:center; font-size:11.5px; font-weight:600; cursor:pointer; border:1px solid #30363d; background:#161b22; color:#8b949e; transition:all .2s; }
+  .sw:hover { border-color:#58a6ff; color:#e6edf3; }
+  .sw.active { background:rgba(88,166,255,0.15); border-color:#58a6ff; color:#58a6ff; }
+
+  .btn {
+    width:100%; padding:9px; border:none; border-radius:8px; cursor:pointer;
+    background:#21262d; color:#c9d1d9; font-size:13px; font-weight:600;
+    transition:all .2s; margin-top:6px;
+  }
+  .btn:hover { background:#30363d; color:#fff; }
+  .btn.primary { background:#1f6feb; color:#fff; }
+  .btn.primary:hover { background:#388bfd; }
+  .btn.warn { background:rgba(255,215,0,0.18); color:#ffd700; border:1px solid rgba(255,215,0,0.4); }
+  .btn.warn:hover { background:rgba(255,215,0,0.32); }
+
+  .switch-row {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:7px 0; font-size:12.5px; color:#c9d1d9;
+  }
+  .switch {
+    position:relative; width:38px; height:22px; background:#30363d;
+    border-radius:11px; cursor:pointer; transition:background .2s;
+  }
+  .switch.on { background:#1f6feb; }
+  .switch::after {
+    content:""; position:absolute; top:2px; left:2px; width:18px; height:18px;
+    background:#fff; border-radius:50%; transition:transform .2s;
+  }
+  .switch.on::after { transform:translateX(16px); }
+
+  .slider-row { display:flex; align-items:center; gap:10px; margin-bottom:9px; }
+  .slider-row:last-child { margin-bottom:0; }
+  .slider-row .axis {
+    width:22px; height:22px; border-radius:6px; display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700; color:#fff; flex-shrink:0;
+  }
+  .axis-x { background:#f85149; }
+  .axis-y { background:#3fb950; }
+  .axis-a { background:#ffd700; color:#000; }
+  .slider-row.locked .axis { background:#30363d !important; color:#484f58 !important; }
+  .slider-row .name { flex:1; font-size:12.5px; color:#c9d1d9; }
+  .slider-row.locked .name { color:#484f58; }
+  .slider-row .name .hint { font-size:10px; color:#6e7681; font-weight:400; margin-left:4px; }
+  .slider-row input[type=range] { width:110px; accent-color:#58a6ff; cursor:pointer; }
+  .slider-row.locked input[type=range] { accent-color:#484f58; cursor:not-allowed; opacity:0.4; }
+  .slider-row .val { width:56px; text-align:right; font-size:12px; color:#8b949e; font-variant-numeric:tabular-nums; font-family:"Consolas",monospace; }
+  .slider-row.locked .val { color:#6e7681; font-style:italic; }
+
+  #info {
+    border-top:1px solid #30363d; padding:14px 16px; background:#0d1117;
+    font-size:12px; color:#8b949e; line-height:1.7;
+  }
+  #info b { color:#c9d1d9; }
+  #info ul { margin:6px 0 0 18px; }
+  #info li { margin-bottom:3px; }
+  .hl-red { color:#ff7b72; font-weight:600; }
+  .hl-yel { color:#ffd700; font-weight:600; }
+  .hl-grn { color:#3fb950; font-weight:600; }
+  .hl-blu { color:#58a6ff; font-weight:600; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="scene-wrap">
+    <canvas id="scene"></canvas>
+
+    <div id="topbar">
+      <button class="btn-mode" data-sys="var">① 可变体系</button>
+      <button class="btn-mode" data-sys="inst">② 瞬变体系</button>
+      <button class="btn-mode" data-sys="inv">③ 不变体系</button>
+    </div>
+
+    <div id="status-badge">
+      <span class="tag" id="sb-tag">可变</span>
+      <div class="title" id="sb-title">几何可变体系</div>
+      <div class="desc" id="sb-desc">约束不足，存在大位移自由度</div>
+      <div class="sep"></div>
+      <div class="row"><span class="k">刚片2自由DOF</span><span class="v" id="sb-dof">3</span></div>
+      <div class="row"><span class="k">约束数 n</span><span class="v" id="sb-n">1</span></div>
+      <div class="row"><span class="k">判定公式 3n</span><span class="v warn" id="sb-rule">DOF &gt; 0</span></div>
+      <div class="sep"></div>
+      <div class="row"><span class="k">施加扰动后</span><span class="v bad" id="sb-result">持续运动</span></div>
+    </div>
+
+    <div id="coord-display">
+      <div class="t">刚片位姿 &amp; 约束</div>
+      <div id="coord-body"></div>
+    </div>
+
+    <div id="legend">
+      <h4>图例</h4>
+      <div class="lg-row"><span class="sw" style="background:#58a6ff;"></span>刚片 1（基础，固定）</div>
+      <div class="lg-row"><span class="sw" style="background:#f778ba;"></span>刚片 2（被分析）</div>
+      <div class="lg-row"><span class="sw" style="background:#ffd700;"></span>链杆</div>
+      <div class="lg-row"><span class="sw c" style="background:#a371f7;"></span>铰点</div>
+    </div>
+  </div>
+
+  <div id="panel">
+    <h2><span class="dot"></span><span>体系几何组成分析</span></h2>
+    <div id="panel-body">
+
+      <div class="group">
+        <div class="group-title">子场景（瞬变/不变有变体）</div>
+        <div class="swatch" id="swatch"></div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">刚片 2 位姿调整</div>
+        <div class="slider-row" data-dof="x">
+          <div class="axis axis-x">X</div>
+          <div class="name">中心位置 X<span class="hint" id="hint-x"></span></div>
+          <input type="range" min="-7" max="7" step="0.05" value="0"><div class="val">0.00</div>
+        </div>
+        <div class="slider-row" data-dof="y">
+          <div class="axis axis-y">Y</div>
+          <div class="name">中心位置 Y<span class="hint" id="hint-y"></span></div>
+          <input type="range" min="-7" max="7" step="0.05" value="0"><div class="val">0.00</div>
+        </div>
+        <div class="slider-row" data-dof="a">
+          <div class="axis axis-a">θ</div>
+          <div class="name">旋转角度<span class="hint" id="hint-a"></span></div>
+          <input type="range" min="-180" max="180" step="1" value="0"><div class="val">0°</div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">施加扰动（演示）<span class="tag" id="play-tag">已停止</span></div>
+        <button class="btn primary" id="btn-shake">▶ 持续施加扰动（验证是否运动）</button>
+        <button class="btn warn" id="btn-pulse">⚡ 瞬时冲击</button>
+        <button class="btn" id="btn-reset">↺ 重置到平衡位形</button>
+      </div>
+
+      <div class="group">
+        <div class="group-title">显示选项</div>
+        <div class="switch-row"><span>显示地基（刚片1固定）</span><div class="switch on" id="sw-ground"></div></div>
+        <div class="switch-row"><span>显示约束反力</span><div class="switch on" id="sw-force"></div></div>
+        <div class="switch-row"><span>显示自由度箭头</span><div class="switch on" id="sw-dof"></div></div>
+        <div class="switch-row"><span>显示弹回轨迹（瞬变）</span><div class="switch on" id="sw-trace"></div></div>
+      </div>
+
+    </div>
+    <div id="info">
+      <b id="info-title">几何可变体系</b>
+      <div style="margin-top:6px;" id="info-body"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Canvas 初始化
+// ============================================================
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, CX = 0, CY = 0;
+const SCALE = 55;
+function resize() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = w; H = h; CX = W/2; CY = H/2 + 20;
+}
+window.addEventListener('resize', resize);
+window.addEventListener('load', resize);
+requestAnimationFrame(resize);
+function toS(x,y){ return { x: CX + x*SCALE, y: CY - y*SCALE }; }
+function toW(sx,sy){ return { x: (sx-CX)/SCALE, y: (CY-sy)/SCALE }; }
+
+// ============================================================
+// 刚片 & 链杆状态
+// ============================================================
+const R1 = { x: 0, y: -1.2, theta: 0, a: 3.8, b: 0.6, fixed: true };  // 作为基础，固定不动
+const R2 = { x: 0, y:  1.4, theta: 0, a: 1.8, b: 0.6, fixed: false }; // 被分析的刚片
+
+let sysType = 'var';      // 'var' | 'inst' | 'inv'
+let subScene = 0;         // 每种体系的变体编号
+
+// 链杆集合（每个：A在R1，B在R2，局部坐标）
+let links = [];
+// 实铰集合（把R1和R2在某点铰接：pt1在R1局部，pt2在R2局部）
+let hinges = [];
+
+// 扰动速度（可变体系下持续运动）
+let V = { x: 0, y: 0, a: 0 };
+// 扰动动画参数
+let playMode = 'idle';    // 'idle' | 'shake' | 'pulse'
+let shakeT = 0;
+let pulseT = 0;
+// 瞬变弹回轨迹点
+let tracePts = [];
+let instantPhase = 'idle'; // 'idle' | 'moving' | 'returning'
+let instantT = 0;
+
+// ============================================================
+// 三种体系 + 变体定义
+// ============================================================
+const SYSTEMS = {
+  var: [
+    {
+      name: "单链杆悬挂",
+      short: "仅1链杆",
+      dofN: 2, n: 1, rule: "DOF=3−2=1>0", result: "持续运动",
+      desc: '约束不足，缺少2个约束。刚片2可绕链杆上端转动并摆动。',
+      body: `<ul>
+        <li>仅用 <b class="hl-yel">1 根链杆</b> 将刚片2悬挂在基础上。</li>
+        <li>链杆只能提供 <b>1 个约束</b>（杆长不变）。</li>
+        <li>平面刚片有 3 DOF，还剩 <b class="hl-red">2 个自由度</b>，可做大位移运动。</li>
+      </ul>`,
+      setup: () => {
+        links = [
+          { A: { lx: -2.2, ly:  0.5 }, B: { lx: -1.0, ly:  0.4 }, color:'#ffd700' },
+        ];
+        hinges = [];
+        R2.x = 0; R2.y = 1.4; R2.theta = 0;
+      }
+    },
+  ],
+  inst: [
+    {
+      name: "两链杆平行但长度不等",
+      short: "平行不等长",
+      dofN: 0, n: 2, rule: "n=2 但平行 → 瞬变", result: "微动→不再平行→锁死",
+      desc: '两根平行链杆长度不等，虚铰在无穷远处，瞬时可动。微动后链杆不再平行，虚铰变为有限远，体系转为不变。',
+      body: `<ul>
+        <li><b class="hl-yel">两根平行链杆</b> 但 <b>长度不等</b>，约束数 = 2。</li>
+        <li>平行链杆的 <b>虚铰在无穷远处</b>，刚片2可沿垂直链杆方向瞬时微动。</li>
+        <li>微动后两链杆 <b>不再平行</b>，虚铰从 ∞ 移到有限远点。</li>
+        <li>体系由瞬时可变 <b>转为几何不变</b>，但微动过程中 <b class="hl-yel">会产生极大内力</b>。</li>
+        <li>因此瞬变体系 <b class="hl-yel">严禁用于工程</b>。</li>
+      </ul>`,
+      setup: () => {
+        // 两根平行链杆（方向相同），但长度不等
+        // Link 1（长杆）: A1(-2.0, 0) on R1 → B1(-0.7, 0) on R2
+        //   A1_world=(-2.0,-1.2), B1_world=(-0.7,1.4), dir=(1.3, 2.6), len≈2.91
+        // Link 2（短杆）: A2(0, 0.5) on R1 → B2(0.8, -0.5) on R2
+        //   A2_world=(0,-0.7), B2_world=(0.8,0.9), dir=(0.8, 1.6), len≈1.79
+        //   交叉验证平行: 1.3*1.6 - 2.6*0.8 = 2.08-2.08 = 0 ✓
+        links = [
+          { A: { lx: -2.0, ly: 0.0 }, B: { lx: -0.7, ly: 0.0 }, color:'#ffd700' },
+          { A: { lx:  0.0, ly: 0.5 }, B: { lx:  0.8, ly: -0.5 }, color:'#ffd700' },
+        ];
+        hinges = [];
+        R2.x = 0; R2.y = 1.4; R2.theta = 0;
+      }
+    },
+    {
+      name: "三链杆汇交同一点",
+      short: "三杆汇交",
+      dofN: 0, n: 2, rule: "三杆延长线汇交同一点 → 瞬变", result: "绕O点微动→不再汇交→锁死",
+      desc: '两刚片用三根链杆相连，三杆延长线汇交同一点O，瞬时可绕O点转动。微动后三杆不再汇交，体系锁死。',
+      body: `<ul>
+        <li>两刚片用 <b class="hl-yel">三根链杆</b> 相连（无实铰）。</li>
+        <li>三根链杆的 <b>延长线恰好汇交同一点 O</b>，形成 <b>虚铰</b>。</li>
+        <li>初始位置，体系可 <b>绕 O 点瞬时转动</b>，具有一个自由度。</li>
+        <li>发生微小转动后，三杆 <b>不再汇交同一点</b>，约束独立。</li>
+        <li>体系从瞬时可变 <b class="hl-yel">转为几何不变</b> — 瞬变体系。</li>
+      </ul>`,
+      setup: () => {
+        // R1 中心 (0, -0.8)，R2 中心 (0, 0.8)，a=2.5, b=0.6
+        // 三根链杆延长线汇交于同一点 O（瞬变虚铰）
+        // 链杆①②对称布置，链杆③独立
+        R2.x = 0;
+        R2.y = 0.8;
+        R2.theta = 0;
+        hinges = [];
+        links = [
+          // 链杆①: 左侧，从R1→R2
+          { A: { lx: -1.5, ly: -0.34 }, B: { lx:  1.64, ly: 0.45 }, color:'#ffd700' },
+          // 链杆②: 右侧，从R1→R2（对称）
+          { A: { lx:  1.5, ly: -0.34 }, B: { lx: -1.64, ly: 0.45 }, color:'#ffd700' },
+          // 链杆③: 中间偏右，从R1→R2
+          { A: { lx:  2.0, ly: -0.26 }, B: { lx: -2.114, ly: 0.320 }, color:'#ffd700' },
+        ];
+      }
+    },
+  ],
+  inv: [
+    {
+      name: "实铰 + 斜向链杆（不共点）",
+      short: "铰+斜杆",
+      dofN: 0, n: 3, rule: "1铰+1不过铰链杆 → 不变", result: "完全不动",
+      desc: '满足两刚片法则：一个实铰 + 一根不通过铰点的链杆 = 几何不变。两刚片上下分层布置，互不重叠。',
+      body: `<ul>
+        <li>两刚片法则：<b>一个实铰 + 一根不通过该铰的链杆</b>。</li>
+        <li>铰提供 <b>2 个约束</b>，链杆提供 <b>1 个约束</b>。</li>
+        <li>约束总数 = 3，完全消除 3 个 DOF，<b class="hl-grn">几何不变且无多余约束</b>。</li>
+        <li>可作为 <b>静定结构</b> 的基本组成方式。</li>
+      </ul>`,
+      setup: () => {
+        // 有实铰时，enforceHinges 会把 R2 位置强制到铰点重合处
+        // 铰在 R1 顶端 (0, R1.b) 和 R2 底端 (0, -R2.b)，铰点世界坐标 (0, -0.6)
+        // R2 被强制到 (0, 0)，与 R1 接触但不重叠
+        R2.x = 0;
+        R2.y = 0;
+        R2.theta = 0;
+        hinges = [{
+          pt1: { lx: 0.0, ly:  R1.b },     // R1 上表面顶点
+          pt2: { lx: 0.0, ly: -R2.b },     // R2 下表面顶点
+        }];
+        // 斜向链杆：R1 右侧 → R2 右侧，不过铰点 → 不变体系
+        // A_world = (2.0, -1.2), B_world = (1.2, 0.0), 铰 = (0, -0.6) 不共线 ✓
+        links = [
+          { A: { lx: 2.0, ly: 0.0 }, B: { lx: 1.2, ly: 0.0 }, color:'#ffd700' },
+        ];
+      }
+    },
+    {
+      name: "三根不平行不汇交链杆",
+      short: "三链杆",
+      dofN: 0, n: 3, rule: "三杆不全平行不共点 → 不变", result: "完全不动",
+      desc: '三根链杆不全平行也不全汇交一点，两两虚铰构成三角形。两刚片上下分层布置，互不重叠。',
+      body: `<ul>
+        <li>两刚片法则的另一种形式：<b>三根不平行、也不共点的链杆</b>。</li>
+        <li>每两根链杆形成一个 <b>虚铰</b>，三个虚铰构成 <b>三角形铰结</b>。</li>
+        <li>只要三个虚铰不共线，体系即为 <b class="hl-grn">几何不变</b>。</li>
+      </ul>`,
+      setup: () => {
+        // R2 完全在 R1 上方，留出明显间隙
+        R2.x = 0;
+        R2.y = R1.y + R1.b + R2.b + 2.4;
+        R2.theta = 0;
+        hinges = [];
+        links = [
+          // 左链杆（斜向右上）
+          { A: { lx: -2.2, ly:  R1.b },     B: { lx: -1.4, ly: -R2.b },     color:'#ffd700' },
+          // 右链杆（斜向左上）
+          { A: { lx:  2.2, ly:  R1.b },     B: { lx:  1.4, ly: -R2.b },     color:'#ffd700' },
+          // 中间链杆（垂直）
+          { A: { lx:  0.0, ly:  R1.b },     B: { lx:  0.0, ly: -R2.b },     color:'#ffd700' },
+        ];
+      }
+    },
+  ],
+};
+
+const SYSTEM_INFO = {
+  var:  { tagCls:'tag-var',  tag:'可变',  title:'几何可变体系 Movable',  shortCls:'bad',  short:'VAR',
+          sbRuleCls:'warn', sbRule:'DOF > 0 (可运动)', sbResCls:'bad',  sbRes:'持续大位移运动' },
+  inst: { tagCls:'tag-inst', tag:'瞬变',  title:'几何瞬变体系 Instantaneous', shortCls:'warn', short:'INST',
+          sbRuleCls:'warn', sbRule:'n足够但布置不当', sbResCls:'warn', sbRes:'瞬时微动→锁死/大内力' },
+  inv:  { tagCls:'tag-inv',  tag:'不变',  title:'几何不变体系 Stable',  shortCls:'good', short:'INV',
+          sbRuleCls:'good', sbRule:'约束合理 DOF≤0', sbResCls:'good', sbRes:'完全不动 静定/超静定' },
+};
+
+// ============================================================
+// 坐标变换
+// ============================================================
+function localToWorld(rig, lx, ly) {
+  const c = Math.cos(rig.theta * Math.PI/180);
+  const s = Math.sin(rig.theta * Math.PI/180);
+  return { x: rig.x + lx*c - ly*s, y: rig.y + lx*s + ly*c };
+}
+
+// ============================================================
+// 切换体系
+// ============================================================
+document.querySelectorAll('.btn-mode').forEach(b => {
+  b.addEventListener('click', () => setSystem(b.dataset.sys, 0));
+});
+function setSystem(type, subIdx = 0) {
+  sysType = type;
+  subScene = Math.min(subIdx, SYSTEMS[type].length - 1);
+  const sc = SYSTEMS[sysType][subScene];
+  sc.setup();
+  V.x = 0; V.y = 0; V.a = 0;
+  playMode = 'idle'; instantPhase='idle'; instantT = 0;
+  tracePts = [];
+  syncSwatches();
+  syncPanel();
+  applySliderLock();
+  syncSliders();
+}
+
+function syncSwatches() {
+  const scArr = SYSTEMS[sysType];
+  const host = document.getElementById('swatch');
+  host.innerHTML = scArr.map((s,i) =>
+    `<div class="sw ${i===subScene?'active':''}" data-i="${i}">${s.short}</div>`).join('');
+  host.querySelectorAll('.sw').forEach(el => {
+    el.addEventListener('click', () => setSystem(sysType, parseInt(el.dataset.i)));
+  });
+
+  const info = SYSTEM_INFO[sysType];
+  const sc = SYSTEMS[sysType][subScene];
+  // top active
+  document.querySelectorAll('.btn-mode').forEach(b => {
+    b.classList.toggle('active', b.dataset.sys === sysType);
+  });
+  // sb
+  document.getElementById('sb-tag').textContent = info.tag + ' ' + sc.short;
+  document.getElementById('sb-tag').className = 'tag ' + info.tagCls;
+  document.getElementById('sb-title').textContent = info.title + ' · ' + sc.name;
+  document.getElementById('sb-desc').textContent  = sc.desc;
+  document.getElementById('sb-dof').textContent   = sc.dofN;
+  document.getElementById('sb-n').textContent     = sc.n;
+  const ruleEl = document.getElementById('sb-rule');
+  ruleEl.textContent = sc.rule;
+  ruleEl.className = 'v ' + info.sbRuleCls;
+  const resEl = document.getElementById('sb-result');
+  resEl.textContent = sc.result;
+  resEl.className = 'v ' + info.sbResCls;
+  // bottom info
+  document.getElementById('info-title').textContent = info.title + '（' + sc.name + '）';
+  document.getElementById('info-body').innerHTML = sc.body;
+
+  // play-tag
+  document.getElementById('play-tag').textContent = playMode==='idle' ? '已停止' : (playMode==='shake' ? '扰动中…' : '冲击中');
+  document.getElementById('play-tag').className = 'tag ' + info.shortCls;
+}
+
+// 根据体系锁定滑块（不变体系：完全锁死；瞬变：允许瞬时量；可变：完全自由）
+function applySliderLock() {
+  const lockX = false, lockY = false, lockA = false;  // 滑块本身始终可调节（作为"位移扰动"）
+  // 但在 play 模式下，滑块会被动画的值覆盖
+  // 这里我们给每个滑块加 hint 说明
+  const sc = SYSTEMS[sysType][subScene];
+  document.getElementById('hint-x').textContent = sysType==='inv' ? '（扰动被挡回）' : (sysType==='inst' ? '（瞬时允许）' : '（自由）');
+  document.getElementById('hint-y').textContent = sysType==='inv' ? '（扰动被挡回）' : (sysType==='inst' ? '（瞬时允许）' : '（自由）');
+  document.getElementById('hint-a').textContent = sysType==='inv' ? '（扰动被挡回）' : (sysType==='inst' ? '（瞬时允许）' : '（自由）');
+}
+
+// ============================================================
+// 滑块 UI
+// ============================================================
+document.querySelectorAll('input[type=range]').forEach(sl => {
+  sl.addEventListener('input', () => {
+    const row = sl.closest('.slider-row');
+    const dof = row.dataset.dof;
+    const v = parseFloat(sl.value);
+    if (dof === 'x') R2.x = v;
+    if (dof === 'y') R2.y = v;
+    if (dof === 'a') R2.theta = v;
+    row.querySelector('.val').textContent = dof === 'a' ? Math.round(v)+'°' : v.toFixed(2);
+    // 切换到手动后停止自动演示
+    // playMode = 'idle'; document.getElementById('play-tag').textContent='已停止';
+  });
+});
+function syncSliders() {
+  document.querySelectorAll('.slider-row').forEach(row => {
+    const dof = row.dataset.dof;
+    const v = dof==='x' ? R2.x : dof==='y' ? R2.y : R2.theta;
+    const sl = row.querySelector('input[type=range]');
+    const min = parseFloat(sl.min), max = parseFloat(sl.max);
+    const vc = Math.max(min, Math.min(max, v));
+    sl.value = vc;
+    row.querySelector('.val').textContent = dof==='a' ? Math.round(vc)+'°' : vc.toFixed(2);
+  });
+}
+
+// ============================================================
+// 扰动按钮
+// ============================================================
+document.getElementById('btn-shake').addEventListener('click', () => {
+  if (playMode === 'shake') {
+    playMode = 'idle';
+  } else {
+    playMode = 'shake'; shakeT = 0;
+    if (sysType === 'inst') { instantPhase = 'moving'; instantT = 0; tracePts = []; }
+  }
+  syncSwatches();
+});
+document.getElementById('btn-pulse').addEventListener('click', () => {
+  playMode = 'pulse'; pulseT = 0;
+  if (sysType === 'inst') { instantPhase = 'moving'; instantT = 0; tracePts = []; }
+  // 给刚片一个瞬时冲击速度
+  const sc = SYSTEMS[sysType][subScene];
+  // 根据体系类型选冲击方向（垂直于最弱约束）
+  if (sysType === 'inst' && subScene === 0) {
+    // 沿垂直于链杆方向冲击 + 轻微转动，使链杆不再平行 → 瞬变转不变
+    V.x = 2.0; V.y = -1.0; V.a = 12;
+  } else if (sysType === 'inst' && subScene === 1) {
+    V.a = 25;    // 绕铰点转动冲击
+  } else if (sysType === 'var') {
+    V.x = 1.6; V.y = -0.8; V.a = 10;
+  } else {
+    V.x = 1.2; V.y = 1.2; V.a = 15;
+  }
+  syncSwatches();
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  setSystem(sysType, subScene);
+  syncSwatches();
+});
+
+// ============================================================
+// 显示开关
+// ============================================================
+let swGround = true, swForce = true, swDof = true, swTrace = true;
+function bindSwitch(id, cb) {
+  const el = document.getElementById(id);
+  el.addEventListener('click', () => {
+    el.classList.toggle('on'); cb(el.classList.contains('on'));
+  });
+}
+bindSwitch('sw-ground', v => swGround = v);
+bindSwitch('sw-force',  v => swForce  = v);
+bindSwitch('sw-dof',    v => swDof    = v);
+bindSwitch('sw-trace',  v => swTrace  = v);
+
+// ============================================================
+// 绘图
+// ============================================================
+function drawArrow(fx,fy,tx,ty,color,w=2,hl=10,dashed=false) {
+  const dx=tx-fx,dy=ty-fy,len=Math.hypot(dx,dy); if(len<2) return;
+  const ux=dx/len,uy=dy/len,hx=-uy,hy=ux;
+  ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=w;
+  if(dashed) ctx.setLineDash([5,4]);
+  ctx.beginPath(); ctx.moveTo(fx,fy); ctx.lineTo(tx,ty); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(tx,ty);
+  ctx.lineTo(tx-ux*hl+hx*hl*0.5, ty-uy*hl+hy*hl*0.5);
+  ctx.lineTo(tx-ux*hl-hx*hl*0.5, ty-uy*hl-hy*hl*0.5);
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+
+function drawGrid() {
+  ctx.lineWidth=1; ctx.strokeStyle='#1c2230'; ctx.beginPath();
+  for(let x=CX%SCALE;x<W;x+=SCALE){ctx.moveTo(x,0);ctx.lineTo(x,H);}
+  for(let y=CY%SCALE;y<H;y+=SCALE){ctx.moveTo(0,y);ctx.lineTo(W,y);}
+  ctx.stroke();
+  ctx.strokeStyle='#30363d'; ctx.lineWidth=1.5; ctx.beginPath();
+  ctx.moveTo(0,CY); ctx.lineTo(W,CY);
+  ctx.moveTo(CX,CY-220); ctx.lineTo(CX,CY+180); ctx.stroke();
+  ctx.font='bold 14px "Segoe UI"';
+  ctx.fillStyle='#f85149'; ctx.fillText('X', W-20, CY-8);
+  ctx.fillStyle='#3fb950'; ctx.fillText('Y', CX+8, CY-212);
+}
+
+function drawGround(yS) {
+  if(!swGround) return;
+  ctx.strokeStyle='#6e7681'; ctx.lineWidth=1.8;
+  ctx.beginPath(); ctx.moveTo(CX-320,yS); ctx.lineTo(CX+320,yS); ctx.stroke();
+  ctx.strokeStyle='#484f58'; ctx.lineWidth=1; ctx.beginPath();
+  for(let x=CX-320;x<CX+320;x+=14){ ctx.moveTo(x,yS); ctx.lineTo(x+12,yS+12); }
+  ctx.stroke();
+}
+
+function drawRigid(rig, colors, label, isGround=false) {
+  const p = toS(rig.x, rig.y);
+  const theta = -rig.theta * Math.PI/180;
+  const a = rig.a*SCALE, b = rig.b*SCALE;
+  ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(theta);
+  const grad = ctx.createLinearGradient(-a,0,a,0);
+  grad.addColorStop(0, colors[0]);
+  grad.addColorStop(0.5, colors[1]);
+  grad.addColorStop(1, colors[0]);
+  ctx.fillStyle = grad; ctx.strokeStyle = colors[2]; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.ellipse(0,0,a,b,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  if (isGround) {
+    // 在 R1 上画"地基阴影斜线"（表示固定）
+    ctx.save();
+    ctx.rotate(0);
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillRect(-a, 0, 2*a, b);
+    ctx.strokeStyle = '#484f58'; ctx.lineWidth = 1; ctx.beginPath();
+    for (let lx = -a; lx < a; lx += 14) {
+      ctx.moveTo(lx, 0); ctx.lineTo(lx + 12, b*0.9);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+  // 主轴
+  ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(-a,0); ctx.lineTo(a,0); ctx.stroke(); ctx.setLineDash([]);
+  // 中心
+  ctx.strokeStyle='#ffffff88'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(-7,0); ctx.lineTo(7,0); ctx.moveTo(0,-7); ctx.lineTo(0,7); ctx.stroke();
+  ctx.fillStyle='#ffffffcc'; ctx.beginPath(); ctx.arc(0,0,2.5,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  ctx.font='bold 12px "Segoe UI"'; ctx.fillStyle=colors[2];
+  ctx.fillText(label, p.x + 12, p.y - (b+14));
+}
+
+function drawLink(A,B,color='#ffd700') {
+  const As = toS(A.x,A.y), Bs = toS(B.x,B.y);
+  const dx=Bs.x-As.x, dy=Bs.y-As.y, len=Math.hypot(dx,dy)||1;
+  const ux=dx/len, uy=dy/len, hx=-uy, hy=ux;
+  ctx.save(); ctx.translate(As.x,As.y); ctx.rotate(Math.atan2(dy,dx));
+  const w = len, h = 7, r = 3;
+  const grad = ctx.createLinearGradient(0,-4,0,4);
+  grad.addColorStop(0,'#b8860b'); grad.addColorStop(0.5,color); grad.addColorStop(1,'#b8860b');
+  ctx.fillStyle=grad; ctx.strokeStyle='#8b6914'; ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(r,-h/2); ctx.lineTo(w-r,-h/2);
+  ctx.quadraticCurveTo(w,-h/2,w,-h/2+r); ctx.lineTo(w,h/2-r);
+  ctx.quadraticCurveTo(w,h/2,w-r,h/2); ctx.lineTo(r,h/2);
+  ctx.quadraticCurveTo(0,h/2,0,h/2-r); ctx.lineTo(0,-h/2+r);
+  ctx.quadraticCurveTo(0,-h/2,r,-h/2);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  drawPin(As.x,As.y); drawPin(Bs.x,Bs.y);
+}
+function drawPin(x,y,color='#ffd700') {
+  ctx.fillStyle='#fff'; ctx.strokeStyle=color; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=color;
+  ctx.beginPath(); ctx.arc(x,y,2.2,0,Math.PI*2); ctx.fill();
+}
+
+function drawHinge(ptWorld, color='#a371f7', size=8) {
+  const s = toS(ptWorld.x, ptWorld.y);
+  // 光晕
+  const grd = ctx.createRadialGradient(s.x,s.y,0,s.x,s.y,24);
+  grd.addColorStop(0,'rgba(163,113,247,0.55)');
+  grd.addColorStop(1,'rgba(163,113,247,0)');
+  ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(s.x,s.y,24,0,Math.PI*2); ctx.fill();
+  // 外圈
+  ctx.fillStyle='#161b22'; ctx.strokeStyle=color; ctx.lineWidth=2.2;
+  ctx.beginPath(); ctx.arc(s.x,s.y,size,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  // 内点
+  ctx.fillStyle=color; ctx.beginPath(); ctx.arc(s.x,s.y,size*0.4,0,Math.PI*2); ctx.fill();
+}
+
+// 约束反力（不变体系显示）
+function drawReactions() {
+  if (!swForce) return;
+  if (sysType !== 'inv' && sysType !== 'inst') return;
+  const sc = SYSTEMS[sysType][subScene];
+  // 每个链杆：从 R2 端点指向远离 R1 方向的（张紧）箭头
+  links.forEach(L => {
+    const Aw = localToWorld(R1, L.A.lx, L.A.ly);
+    const Bw = localToWorld(R2, L.B.lx, L.B.ly);
+    const Bs = toS(Bw.x, Bw.y);
+    const dx = Aw.x - Bw.x, dy = Aw.y - Bw.y, len = Math.hypot(dx,dy)||1;
+    const ux = dx/len, uy = dy/len;
+    const tipX = Bs.x - ux * 40;
+    const tipY = Bs.y + uy * 40; // 屏幕y翻转，所以 +
+    drawArrow(Bs.x, Bs.y, tipX, Bs.y - uy * 40 + uy*40 /*抵消*/, '#ff7b72', 2.2, 11);
+    // 简化：从 R2 端点朝外画张力箭头（与链杆共线，指向 R1 反方向）
+  });
+  // 简化：在 R2 中心画反力集合
+  const p = toS(R2.x, R2.y);
+  // 上（y+）
+  drawArrow(p.x, p.y, p.x, p.y - 70, '#ff7b72', 2.2, 11);
+  ctx.font='bold 12px "Consolas"'; ctx.fillStyle='#ff7b72';
+  ctx.fillText('Fᵧ', p.x + 8, p.y - 72);
+  // 左
+  drawArrow(p.x, p.y, p.x - 70, p.y, '#ff7b72', 2.2, 11);
+  ctx.fillText('Fₓ', p.x - 80, p.y - 8);
+  if (sysType === 'inv' && subScene === 0) {
+    // 反力偶（铰+斜杆：不变体系有转动约束吗？不一定。仅在固定铰+链杆才。省略。）
+  }
+}
+
+// 自由度箭头（DOF 指示）
+function drawDofMarkers() {
+  if (!swDof) return;
+  const p = toS(R2.x, R2.y);
+  const sc = SYSTEMS[sysType][subScene];
+  // 分析每个方向是否自由
+  const fr = { x: false, y: false, a: false };
+  if (sysType === 'var') { fr.x = true; fr.y = true; fr.a = true; }
+  else if (sysType === 'inst' && subScene === 0) { fr.x = true; fr.y = true; fr.a = false; } // 平行链杆：⊥链杆方向瞬时微动
+  else if (sysType === 'inst' && subScene === 1) { fr.a = true; } // 汇交：瞬时转动
+  // else inv 全部约束
+
+  // 自由方向绿色双向箭头
+  if (fr.x) { drawBidirectionalArrow(p.x - 50, p.y + 30, p.x + 50, p.y + 30, '#3fb950'); textXY(p.x + 60, p.y + 34, 'X 自由', '#3fb950'); }
+  else        { textXY(p.x + 30, p.y + 30, '✗ X 约束', '#f85149'); }
+  if (fr.y) { drawBidirectionalArrow(p.x + 30, p.y - 50, p.x + 30, p.y + 50, '#3fb950'); textXY(p.x + 40, p.y - 54, '↑ Y 自由', '#3fb950'); }
+  else        { textXY(p.x + 30, p.y - 40, '✗ Y 约束', '#f85149'); }
+  if (fr.a) { drawRotationArc(p.x, p.y, 34, '#3fb950', true); textXY(p.x + 52, p.y - 20, 'θ 自由', '#3fb950'); }
+  else        { textXY(p.x + 50, p.y - 4, '✗ θ 约束', '#f85149'); }
+}
+function textXY(x,y,txt,c){ ctx.font='bold 12px "Segoe UI"'; ctx.fillStyle=c; ctx.fillText(txt,x,y); }
+function drawBidirectionalArrow(x1,y1,x2,y2,color) {
+  drawArrow(x1,y1,x2,y2,color,2,10); drawArrow(x2,y2,x1,y1,color,2,10);
+}
+function drawRotationArc(cx,cy,r,color,labelFree) {
+  ctx.save(); ctx.strokeStyle=color; ctx.lineWidth=1.8; ctx.setLineDash([6,5]);
+  ctx.beginPath(); ctx.arc(cx,cy,r, (330)*Math.PI/180, (30)*Math.PI/180, true); ctx.stroke();
+  ctx.setLineDash([]);
+  // 箭头
+  const a1 = (30)*Math.PI/180;
+  const ex = cx + r*Math.cos(a1), ey = cy + r*Math.sin(a1);
+  const tx = Math.cos(a1 + Math.PI/2), ty = Math.sin(a1 + Math.PI/2);
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.moveTo(ex,ey);
+  ctx.lineTo(ex - 10*Math.cos(a1) + 6*tx, ey - 10*Math.sin(a1) + 6*ty);
+  ctx.lineTo(ex - 10*Math.cos(a1) - 6*tx, ey - 10*Math.sin(a1) - 6*ty);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// 计算两根链杆延长线的交点（用于三链杆汇交O点可视化）
+function computeConcurrentPoint(L1, L2) {
+  // L1, L2: { A: {x,y}, B: {x,y} }
+  const x1 = L1.A.x, y1 = L1.A.y, x2 = L1.B.x, y2 = L1.B.y;
+  const x3 = L2.A.x, y3 = L2.A.y, x4 = L2.B.x, y4 = L2.B.y;
+  const denom = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4);
+  if (Math.abs(denom) < 1e-9) return null; // 平行或重合
+  const t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / denom;
+  return { x: x1 + t*(x2-x1), y: y1 + t*(y2-y1) };
+}
+
+// 瞬变弹回轨迹
+function drawInstTrace() {
+  if (sysType !== 'inst') return;
+  if (!swTrace || tracePts.length < 2) return;
+  ctx.save();
+  ctx.lineWidth = 2;
+  for (let i = 1; i < tracePts.length; i++) {
+    const alpha = i / tracePts.length;
+    const p0 = tracePts[i-1], p1 = tracePts[i];
+    const s0 = toS(p0.x, p0.y), s1 = toS(p1.x, p1.y);
+    if (instantPhase === 'moving') ctx.strokeStyle = `rgba(255,215,0,${0.2+alpha*0.8})`;
+    else                          ctx.strokeStyle = `rgba(63,185,80,${0.2+(1-alpha)*0.8})`;
+    ctx.beginPath(); ctx.moveTo(s0.x,s0.y); ctx.lineTo(s1.x,s1.y); ctx.stroke();
+  }
+  // 起点、终点标注
+  const s0 = toS(tracePts[0].x, tracePts[0].y);
+  const s1 = toS(tracePts[tracePts.length-1].x, tracePts[tracePts.length-1].y);
+  ctx.fillStyle = '#ffd700';
+  ctx.beginPath(); ctx.arc(s0.x,s0.y,5,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#3fb950';
+  ctx.beginPath(); ctx.arc(s1.x,s1.y,5,0,Math.PI*2); ctx.fill();
+  ctx.font = 'bold 11px "Segoe UI"';
+  ctx.fillStyle = '#ffd700'; ctx.fillText('初始 瞬变点', s0.x + 8, s0.y - 8);
+  ctx.fillStyle = '#3fb950'; ctx.fillText('弹回后 稳定', s1.x + 8, s1.y + 16);
+  ctx.restore();
+}
+
+// ============================================================
+// 坐标显示
+// ============================================================
+function updateCoordDisplay() {
+  const body = document.getElementById('coord-body');
+  const sc = SYSTEMS[sysType][subScene];
+  let s = `<div class="hdr" style="color:#f778ba">刚片 2（被分析）</div>
+    <div class="row"><span class="key">x₂ =</span><span class="val x">${R2.x.toFixed(2)}</span></div>
+    <div class="row"><span class="key">y₂ =</span><span class="val y">${R2.y.toFixed(2)}</span></div>
+    <div class="row"><span class="key">θ₂ =</span><span class="val a">${Math.round(R2.theta)}°</span></div>`;
+  s += `<div class="hdr" style="color:#8b949e;margin-top:8px;">约束信息</div>`;
+  s += `<div class="row"><span class="key">链杆数 =</span><span class="val">${links.length}</span></div>`;
+  s += `<div class="row"><span class="key">实铰数 =</span><span class="val">${hinges.length}</span></div>`;
+  s += `<div class="row"><span class="key">约束数 n =</span><span class="val">${links.length + hinges.length*2}</span></div>`;
+  body.innerHTML = s;
+}
+
+// ============================================================
+// 链杆长度不变约束（位置约束求解）
+// ============================================================
+// 每根链杆的初始长度（在 setup 后由 computeLinkRestLengths() 计算）
+let linkRestLen = [];
+
+function computeLinkRestLengths() {
+  linkRestLen = links.map(L => {
+    const A = localToWorld(R1, L.A.lx, L.A.ly);
+    const B = localToWorld(R2, L.B.lx, L.B.ly);
+    return Math.hypot(B.x - A.x, B.y - A.y);
+  });
+}
+
+// 链杆端点世界坐标 → R2 中心 + 角度的偏移（用于约束雅可比）
+function getLinkEndBLocal(link) {
+  return { lx: link.B.lx, ly: link.B.ly };
+}
+
+// 把链杆长度强制投影到初始长度。
+// 算法：对每根链杆，B 端点（在 R2 上）的世界位置和 A 端点（在 R1 上，固定）的世界位置距离应为 restLen。
+// 通过调整 R2 的 (x, y, theta) 来满足（最小二乘方向）。
+// 由于 R1 是固定的，所有约束都通过 R2 的位姿调整来吸收。
+function enforceLinkLengths(iterations = 10) {
+  if (links.length === 0) return;
+  const hasHinges = hinges.length > 0;
+  for (let iter = 0; iter < iterations; iter++) {
+    let anyError = false;
+    for (let i = 0; i < links.length; i++) {
+      const L = links[i];
+      const A = localToWorld(R1, L.A.lx, L.A.ly);  // 固定端
+      const B = localToWorld(R2, L.B.lx, L.B.ly);  // 跟随 R2 运动
+      const dx = B.x - A.x, dy = B.y - A.y;
+      const curLen = Math.hypot(dx, dy);
+      const restLen = linkRestLen[i];
+      if (restLen < 1e-6) continue;
+      const err = curLen - restLen;
+      if (Math.abs(err) < 1e-5) continue;
+      anyError = true;
+      const ux = dx / curLen, uy = dy / curLen;
+      const c = Math.cos(R2.theta * Math.PI/180);
+      const s = Math.sin(R2.theta * Math.PI/180);
+      const dBdtheta_x = -L.B.lx * s - L.B.ly * c;
+      const dBdtheta_y =  L.B.lx * c - L.B.ly * s;
+      const need_x = -err * ux;
+      const need_y = -err * uy;
+
+      if (hasHinges) {
+        // 有实铰时，R2.x/y 由铰约束决定，只能调 theta 来满足杆长
+        const jac_x = dBdtheta_x, jac_y = dBdtheta_y;
+        const jacLen2 = jac_x*jac_x + jac_y*jac_y;
+        if (jacLen2 > 1e-6) {
+          const proj = (need_x * jac_x + need_y * jac_y) / jacLen2;
+          R2.theta += proj * 0.5 * 180 / Math.PI;
+        }
+      } else {
+        // 无铰时，同时调整 R2 中心位置和角度
+        const correction = -err * 0.5;
+        R2.x += correction * ux;
+        R2.y += correction * uy;
+        const jac_x = dBdtheta_x, jac_y = dBdtheta_y;
+        const jacLen2 = jac_x*jac_x + jac_y*jac_y;
+        if (jacLen2 > 1e-6) {
+          const proj = (need_x * jac_x + need_y * jac_y) / jacLen2;
+          R2.theta += proj * 0.5 * 180 / Math.PI;
+        }
+      }
+    }
+    if (!anyError) break;
+    // 有铰时每轮迭代后重新强制铰约束（theta 变了会改变铰位置）
+    if (hasHinges) enforceHinges();
+  }
+}
+
+// ============================================================
+// 铰链约束求解（每一帧强制执行：实铰端点必须重合）
+// ============================================================
+function enforceHinges() {
+  for (const h of hinges) {
+    const p1 = localToWorld(R1, h.pt1.lx, h.pt1.ly);
+    // R2 的 p2 端点必须 == p1
+    // 解：R2.x + R(θ2)*p2 = p1 → R2.x = p1 - R(θ2)*p2
+    const c = Math.cos(R2.theta*Math.PI/180), s = Math.sin(R2.theta*Math.PI/180);
+    const dx = h.pt2.lx * c - h.pt2.ly * s;
+    const dy = h.pt2.lx * s + h.pt2.ly * c;
+    R2.x = p1.x - dx;
+    R2.y = p1.y - dy;
+  }
+}
+
+// ============================================================
+// 主循环 & 动画物理
+// ============================================================
+let lastT = performance.now();
+function animate(now) {
+  const dt = Math.min((now - lastT)/1000, 0.05); lastT = now;
+  if (W<2||H<2) resize();
+
+  // ============= 运动仿真 =============
+  if (playMode === 'shake') {
+    shakeT += dt;
+    // 持续的周期扰动（正弦速度场，模拟持续外力）
+    const amp = 1.0;
+    const fx = Math.sin(shakeT * 3.0) * amp * 1.6;
+    const fy = Math.cos(shakeT * 2.4) * amp * 1.2;
+    const fa = Math.sin(shakeT * 1.8) * 25;
+
+    V.x = 0.85 * V.x + 0.15 * fx;
+    V.y = 0.85 * V.y + 0.15 * fy;
+    V.a = 0.85 * V.a + 0.15 * fa;
+  } else if (playMode === 'pulse') {
+    pulseT += dt;
+    // 脉冲：速度逐渐衰减（物理阻尼）
+    const damp = Math.exp(-pulseT * 1.3);
+    // V 本身保留初值，后面乘以 damp 应用
+  } else {
+    // idle：速度清零
+    V.x *= 0.85; V.y *= 0.85; V.a *= 0.85;
+    if (Math.abs(V.x) < 0.01) V.x = 0;
+    if (Math.abs(V.y) < 0.01) V.y = 0;
+    if (Math.abs(V.a) < 0.5 ) V.a = 0;
+  }
+
+  const effDamp = playMode === 'pulse' ? Math.exp(-pulseT * 1.3) : 1;
+  let dX = V.x * dt * effDamp;
+  let dY = V.y * dt * effDamp;
+  let dA = V.a * dt * effDamp;
+
+  // ============= 根据体系类型做运动约束 =============
+  const sc = SYSTEMS[sysType][subScene];
+
+  if (sysType === 'var') {
+    // 可变：刚片自由运动，但链杆长度始终不变
+    R2.x += dX; R2.y += dY; R2.theta += dA;
+  }
+  else if (sysType === 'inst') {
+    // 瞬变：先允许瞬时微动，再被"卡住"弹回
+    if (instantPhase === 'idle') {
+      // 无速度就不动
+      if (Math.abs(dX) < 1e-4 && Math.abs(dY) < 1e-4 && Math.abs(dA) < 1e-3) {
+        // idle
+      } else {
+        instantPhase = 'moving'; instantT = 0; tracePts = [{ x: R2.x, y: R2.y }];
+      }
+    }
+    if (instantPhase === 'moving') {
+      instantT += dt;
+      // 前 0.6s 内：在"许可"的瞬变方向上自由运动
+      R2.x += dX; R2.y += dY; R2.theta += dA;
+      // subScene 0 (平行不等长链杆)：⊥链杆方向微动 + 转动使链杆不再平行
+      // subScene 1 (三链杆汇交同一点)：绕O点转动微动，使三杆不再汇交
+      // 超过阈值后：进入弹回阶段
+      const threshold = subScene === 0 ? 0.4 : (subScene === 1 ? 8 : 1.0);
+      const metric = subScene === 0 ? (Math.abs(R2.y - R2_ref.y) + Math.abs(R2.theta) * 0.03) : (subScene === 1 ? Math.abs(R2.theta) : 0);
+      tracePts.push({ x: R2.x, y: R2.y });
+      if (metric > threshold || instantT > 1.0) {
+        instantPhase = 'returning'; instantT = 0;
+      }
+    } else if (instantPhase === 'returning') {
+      instantT += dt;
+      // 0.8s 内平滑回到初始位置
+      const origX = R2_ref.x, origY = R2_ref.y, origA = R2_ref.a;
+      const T = 0.8;
+      const t = Math.min(1, instantT / T);
+      const ease = t<0.5 ? 2*t*t : 1 - Math.pow(-2*t+2,2)/2;
+      // 起点 = tracePts[0]（记录的瞬变开始点）
+      const tp0 = tracePts[0] || { x: R2.x, y: R2.y };
+      R2.x     = tp0.x     + (origX - tp0.x)     * ease + (tracePts[tracePts.length-1].x - tp0.x) * (1-ease);
+      R2.y     = tp0.y     + (origY - tp0.y)     * ease + (tracePts[tracePts.length-1].y - tp0.y) * (1-ease);
+      R2.theta = R2_startA + (origA - R2_startA) * ease + (R2.theta_last - R2_startA) * (1-ease);
+      if (t >= 1) {
+        R2.x = origX; R2.y = origY; R2.theta = origA;
+        instantPhase = 'idle';
+        if (playMode === 'pulse') { playMode = 'idle'; syncSwatches(); }
+      }
+    }
+  }
+  else if (sysType === 'inv') {
+    // 不变：扰动被"刚性挡回"—— 应用速度，但立即归零（视觉抖动一下然后保持不动）
+    // 做法：把位移按强阻尼吸收，做一个轻微回弹的效果
+    const springK = 18, dampC = 7;
+    const refX = R2_ref.x, refY = R2_ref.y, refA = R2_ref.a;
+    R2.x += dX; R2.y += dY; R2.theta += dA;
+    const ex = R2.x - refX, ey = R2.y - refY, ea = R2.theta - refA;
+    // 回复力
+    V.x += -springK * ex * dt - dampC * V.x * dt;
+    V.y += -springK * ey * dt - dampC * V.y * dt;
+    V.a += -springK * ea * dt - dampC * V.a * dt;
+  }
+
+  // 保存瞬变开始点
+  if (instantPhase === 'moving' && instantT < dt * 2 && tracePts.length === 1) {
+    instantPhaseStart = { x: R2.x, y: R2.y, a: R2.theta };
+    R2_startA = R2.theta;
+  }
+  if (instantPhase === 'moving') {
+    R2.theta_last = R2.theta;
+  }
+
+  // ============= 约束求解 =============
+  // 实铰约束（强约束，先解，决定 R2 中心位置）
+  enforceHinges();
+  // 链杆长度不变约束（投影到原始长度）
+  enforceLinkLengths(10);
+
+  // 归一化角度
+  while (R2.theta > 180) R2.theta -= 360;
+  while (R2.theta < -180) R2.theta += 360;
+
+  syncSliders();
+
+  // ============= 绘图 =============
+  ctx.clearRect(0,0,W,H);
+  drawGrid();
+
+  // 画 R1（基础）
+  drawRigid(R1, ['rgba(31,111,235,0.35)','rgba(88,166,255,0.65)','#58a6ff'], '刚片 1（基础）', true);
+  // 画 R2
+  drawRigid(R2, ['rgba(247,120,186,0.35)','rgba(247,120,186,0.65)','#f778ba'], '刚片 2');
+
+  // 画链杆
+  links.forEach(L => {
+    const Aw = localToWorld(R1, L.A.lx, L.A.ly);
+    const Bw = localToWorld(R2, L.B.lx, L.B.ly);
+    // 画延长线（虚铰/瞬变模式下需要）
+    if (sysType === 'inst' && subScene === 0) {
+      // 平行链杆：画延长线显示虚铰在无穷远
+      ctx.save(); ctx.strokeStyle='rgba(255,215,0,0.35)'; ctx.lineWidth=1; ctx.setLineDash([5,5]);
+      const As=toS(Aw.x,Aw.y), Bs=toS(Bw.x,Bw.y);
+      const ux = Bs.x-As.x, uy = Bs.y-As.y; const len=Math.hypot(ux,uy)||1;
+      const ex = W*1.2*(ux/len), ey = W*1.2*(uy/len);
+      ctx.beginPath(); ctx.moveTo(As.x-ex,As.y-ey); ctx.lineTo(Bs.x+ex,Bs.y+ey); ctx.stroke();
+      ctx.setLineDash([]); ctx.restore();
+    }
+    if (sysType === 'inst' && subScene === 1) {
+      // 三链杆汇交：画延长线至O点
+      ctx.save(); ctx.strokeStyle='rgba(255,107,114,0.5)'; ctx.lineWidth=1.5; ctx.setLineDash([6,4]);
+      const As=toS(Aw.x,Aw.y), Bs=toS(Bw.x,Bw.y);
+      const ux = Bs.x-As.x, uy = Bs.y-As.y; const len=Math.hypot(ux,uy)||1;
+      // 向两侧延长到画布外
+      const ext = Math.max(W, H);
+      const ex = ext*(ux/len), ey = ext*(uy/len);
+      ctx.beginPath(); ctx.moveTo(As.x-ex,As.y-ey); ctx.lineTo(Bs.x+ex,Bs.y+ey); ctx.stroke();
+      ctx.setLineDash([]); ctx.restore();
+    }
+    drawLink(Aw, Bw, L.color || '#ffd700');
+  });
+
+  // 画三链杆汇交点 O（仅 subScene 1）
+  if (sysType === 'inst' && subScene === 1 && hinges.length === 0) {
+    // 计算三根链杆延长线的交点（理论上应汇交一点）
+    const pts = links.map(L => {
+      const Aw = localToWorld(R1, L.A.lx, L.A.ly);
+      const Bw = localToWorld(R2, L.B.lx, L.B.ly);
+      return { A: Aw, B: Bw };
+    });
+    // 计算前两根链杆延长线的交点
+    const O_pt = computeConcurrentPoint(pts[0], pts[1]);
+    if (O_pt) {
+      const Os = toS(O_pt.x, O_pt.y);
+      const moved = Math.abs(R2.theta) > 0.5 || Math.abs(R2.x - R2_ref.x) > 0.01 || Math.abs(R2.y - R2_ref.y) > 0.01;
+      ctx.save();
+      // 高亮圆圈
+      ctx.strokeStyle = moved ? '#ff7b72' : '#ffd700';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash(moved ? [4,3] : []);
+      ctx.beginPath();
+      ctx.arc(Os.x, Os.y, 30, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // 填充
+      ctx.fillStyle = moved ? 'rgba(255,123,114,0.15)' : 'rgba(255,215,0,0.2)';
+      ctx.beginPath();
+      ctx.arc(Os.x, Os.y, 28, 0, Math.PI*2);
+      ctx.fill();
+      // 标签
+      ctx.fillStyle = moved ? '#ff7b72' : '#ffd700';
+      ctx.font = 'bold 16px "Segoe UI"';
+      ctx.textAlign = 'center';
+      ctx.fillText('O', Os.x, Os.y + 5);
+      ctx.textAlign = 'start';
+      // 状态文字
+      ctx.font = 'bold 12px "Segoe UI"';
+      ctx.fillStyle = moved ? '#ff7b72' : '#ffd700';
+      const label = moved ? '⚠ 三杆不再汇交' : '三杆汇交点（虚铰 O）';
+      ctx.fillText(label, Os.x - 55, Os.y - 38);
+      ctx.restore();
+    }
+  }
+
+  // 画实铰
+  hinges.forEach(h => {
+    const pw = localToWorld(R1, h.pt1.lx, h.pt1.ly);
+    drawHinge(pw, '#a371f7');
+  });
+
+  // 地基（在 R1 下方）
+  const R1_bot = localToWorld(R1, 0, -R1.b);
+  const R1_botS = toS(R1_bot.x, R1_bot.y);
+  drawGround(R1_botS.y);
+
+  // DOF 标记
+  drawDofMarkers();
+
+  // 反力（不变体系）
+  drawReactions();
+
+  // 瞬变轨迹
+  drawInstTrace();
+
+  // 状态横幅（左下角额外显示）
+  drawPhaseBanner();
+
+  updateCoordDisplay();
+  requestAnimationFrame(animate);
+}
+
+let instantPhaseStart = { x:0,y:0,a:0 };
+let R2_startA = 0;
+let R2_ref = { x:0, y:1.4, a:0 };  // 不变体系的参考位形
+
+// 顶部横幅：显示当前体系运动状态文字
+function drawPhaseBanner() {
+  const info = SYSTEM_INFO[sysType];
+  let banner;
+  if (playMode === 'shake') banner = '⏳ 持续扰动中 …… ' + info.short;
+  else if (playMode === 'pulse') banner = '⚡ 瞬时冲击（速度衰减） ' + info.short;
+  else if (instantPhase === 'moving') banner = '⚠ 瞬时运动：结构在该方向瞬时可动';
+  else if (instantPhase === 'returning') banner = '🟢 运动受限：被约束弹回 → 几何不变';
+  else return;
+  ctx.save();
+  ctx.font = 'bold 13px "Segoe UI"';
+  const pad = 10;
+  const m = ctx.measureText(banner);
+  const bx = CX - (m.width/2) - pad;
+  const by = CY + 112;
+  const bw = m.width + pad*2, bh = 26;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.strokeStyle = info.tagCls.replace('tag-','')==='var' ? '#f85149' : (info.tagCls.replace('tag-','')==='inst' ? '#ffd700' : '#3fb950');
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.fillText(banner, bx + pad, by + 17);
+  ctx.restore();
+}
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+}
+
+// ============================================================
+// 每次 setSystem 后保存"参考位形"（不变体系的平衡位置）
+// ============================================================
+const origSetSystem = setSystem;
+// 直接在 setSystem 函数末尾保存 ref
+// —— 因为 setSystem 已定义，用函数包装修改：
+const _oldSetSystem = setSystem;
+// 为了避免重复声明，这里用 MutationObserver 风格的做法不合适，
+// 改为重写函数引用（函数表达式的方式在上面已经用 const 声明了）
+// 我们在 animate 中通过取 sc.setup 后的位形来得到 ref，做法更干净。
+// 这里直接修改全局：在 applySliderLock 里同步一次。
+// 更简单：在 animate 函数里每次取位形前，若 R2_ref 为旧值则更新（通过检测 sysType+subScene）
+let refKey = '';
+const _origAnimate = animate;
+// 替代方案：在 setSystem 内部同步一次 → 重写 setSystem
+// 由于 setSystem 是 function declaration 会挂在 window 上，我们重新赋值覆盖：
+window.setSystem = function(type, subIdx=0) {
+  sysType = type;
+  subScene = Math.min(subIdx, SYSTEMS[type].length - 1);
+  const sc = SYSTEMS[sysType][subScene];
+  sc.setup();
+  // 强制执行一次约束求解，确保 setup 后铰接和杆长严格满足
+  enforceHinges();
+  // 计算并保存每根链杆的原始长度（链杆长度不变约束的参考值）
+  computeLinkRestLengths();
+  // 再次求解一次，使位形完全满足约束
+  enforceLinkLengths(20);
+  // 保存参考
+  R2_ref = { x: R2.x, y: R2.y, a: R2.theta };
+  V.x = 0; V.y = 0; V.a = 0;
+  playMode = 'idle'; instantPhase='idle'; instantT = 0;
+  tracePts = [];
+  refKey = sysType + '/' + subScene;
+  syncSwatches();
+  syncPanel();
+  applySliderLock();
+  syncSliders();
+};
+function syncPanel(){ /* （历史保留，之前已经同步在 syncSwatches 中） */ }
+
+// 初始化
+window.setSystem('var', 0);
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
